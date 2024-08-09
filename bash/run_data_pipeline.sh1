@@ -1,0 +1,76 @@
+#!/bin/bash
+
+# Check if exactly one argument (source_id) is provided
+if [ "$#" -ne 1 ]; then
+    echo "Usage: $0 <source_id>"
+    exit 1
+fi
+
+source_id=$1
+
+# Step 1: Execute download_xlsx.sh
+echo "Running download_xlsx.sh..."
+/home/ubuntu/kchen/online_api/download_xlsx.sh
+if [ $? -ne 0 ]; then
+    echo "Error: download_xlsx.sh failed."
+    exit 1
+fi
+
+# Step 2: Run Docker container and execute R script
+echo "Running Docker container and executing R script..."
+cp /home/ubuntu/kchen/scFetch/test/convertAnn.R ./
+docker run --rm -v "$(pwd)":/home/rstudio/run -v ~/kchen:/home/rstudio -w /home/rstudio/run 03b8cd7eec0d Rscript /home/rstudio/run/convertAnn.R $source_id
+if [ $? -ne 0 ]; then
+    echo "Error: Docker container or R script execution failed."
+    exit 1
+fi
+
+# Step 3: Activate conda environment
+
+echo "Activating conda environment 'lamindb'..."
+conda activate lamindb
+if [ $? -ne 0 ]; then
+    echo "Error: Conda environment activation failed."
+    exit 1
+fi
+
+# Step 4: Log in to lamin
+echo "Logging in to lamin..."
+lamin login fujingge
+if [ $? -ne 0 ]; then
+    echo "Error: Lamin login failed."
+    exit 1
+fi
+
+# Step 5: Run Python script 1-qc.py
+echo "Running Python script 1-qc.py..."
+python ~/fujingge/1-qc.py --source_id $source_id
+if [ $? -ne 0 ]; then
+    echo "Error: Python script 1-qc.py execution failed."
+    exit 1
+fi
+
+
+# Step 6: Run Python script 2-lamindb-aws.py with up to 3 retries
+max_retries=3
+attempt=0
+success=false
+
+while [ $attempt -lt $max_retries ]; do
+    echo "Running Python script 2-lamindb-aws.py (Attempt $((attempt+1))/$max_retries)..."
+    python ~/fujingge/2-lamindb-aws.py
+    if [ $? -eq 0 ]; then
+        success=true
+        break
+    else
+        echo "Error: Python script 2-lamindb-aws.py execution failed."
+        attempt=$((attempt+1))
+    fi
+done
+
+if ! $success; then
+    echo "Error: Python script 2-lamindb-aws.py failed after $max_retries attempts."
+    exit 1
+fi
+
+echo "Pipeline completed successfully."
