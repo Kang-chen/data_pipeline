@@ -217,7 +217,7 @@ if len(adata.var.index) != len(set(adata.var.index)):
     print("Genes containing $$$$: ", adata.var.index[adata.var.index.str.contains('$$$$')])
 
     # 如果有基因包含$$$$，则过滤它们
-    adata = adata[:, ~adata.var.index.str.contains('$$$$')]
+    adata = adata[:, adata.var.index.str.contains('$$$$')]
     adata.var.index = adata.var.index.map(gene_map).fillna('0')
 
 
@@ -288,6 +288,8 @@ filtered_adata = filtered_adata[filtered_adata.obs.pct_counts_mt < 5, :]
 
 
 # In[25]:
+
+import scrublet as scr
 
 
 # Remove doublets using scrublet
