@@ -19,7 +19,7 @@ Output:
 
 """
 def GPT3_turbo(content):
-    OPEN_API_KEY = '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'
+    OPEN_API_KEY = 'xxx'
     client = OpenAI(
         api_key=OPEN_API_KEY,
     )
