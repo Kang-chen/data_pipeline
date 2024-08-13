@@ -56,7 +56,7 @@ for req_col, matched_col in matched_columns.items():
     if matched_col is not None:
         obs_df[req_col] = obs_df[matched_col]
     else:
-        obs_df[req_col] = 'unknown'
+        obs_df[req_col] = None
 
 
 # Update the obs data frame to adata
@@ -66,13 +66,20 @@ adata.obs = obs_df
 bionty = bt.ExperimentalFactor.public()  # access the public ontology through bionty
 name_mapper = {}
 for name in adata.obs['assay'].unique():
-    # search the public ontology and use the ontology id of the top match
-    ontology_id = bionty.search(name).iloc[0].ontology_id
-    # create a record by loading the top match from bionty
-    record = bt.ExperimentalFactor.from_source(ontology_id=ontology_id)
-    name_mapper[name] = record.name  # map the original name to standardized name
-    record.save()
-    record.add_synonym(name)
+    if name is not None and isinstance(name, str) and name.strip():  # Check whether name is empty or invalid
+        # search the public ontology and use the ontology id of the top match
+        search_result = bionty.search(name)
+        if not search_result.empty:
+            ontology_id = bionty.search(name).iloc[0].ontology_id
+            # create a record by loading the top match from bionty
+            record = bt.ExperimentalFactor.from_source(ontology_id=ontology_id)
+            name_mapper[name] = record.name  # map the original name to standardized name
+            record.save()
+            record.add_synonym(name)
+        else:
+            name_mapper[name] = "unknown"
+    else:
+        name_mapper[name] = "unknown"
 
 # Apply the mapping results to adata.obs
 adata.obs['assay'] = adata.obs['assay'].map(name_mapper)
@@ -85,19 +92,24 @@ name_mapper = {}
 ontology_id_mapper = {}
 
 for name in adata.obs['cell_type_original'].unique():
-    # search the public ontology and use the ontology id of the top match
-    search_result = bionty.search(name)
-    if not search_result.empty:
-        ontology_id = search_result.iloc[0].ontology_id
-        # create a record by loading the top match from bionty
-        record = bt.CellType.from_public(ontology_id=ontology_id)
-        name_mapper[name] = record.name  # map the original name to standardized name
-        ontology_id_mapper[name] = ontology_id 
-        record.save()
-        record.add_synonym(name)
+    if name is not None and isinstance(name, str) and name.strip():  # Check whether name is empty or invalid
+        # search the public ontology and use the ontology id of the top match
+        search_result = bionty.search(name)
+        if not search_result.empty:
+            ontology_id = search_result.iloc[0].ontology_id
+            # create a record by loading the top match from bionty
+            record = bt.CellType.from_source(ontology_id=ontology_id)
+            name_mapper[name] = record.name  # map the original name to standardized name
+            ontology_id_mapper[name] = ontology_id 
+            record.save()
+            record.add_synonym(name)
+        else:
+            name_mapper[name] = "unknown"
+            ontology_id_mapper[name] = "unknown"
     else:
-        name_mapper[name] = "Unknown"
-        ontology_id_mapper[name] = "Unknown"
+            name_mapper[name] = "unknown"
+            ontology_id_mapper[name] = "unknown"
+    
 
 # Apply the mapping results to adata.obs
 adata.obs['cell_type_ontology'] = adata.obs['cell_type_original'].map(name_mapper)
@@ -111,8 +123,7 @@ name_mapper = {}
 ontology_id_mapper = {}
 
 for name in adata.obs['development_stage_original'].unique():
-    # 确保name不是None或空字符串
-    if pd.notna(name):
+    if name is not None and isinstance(name, str) and name.strip():  # Check whether name is empty or invalid
         # search the public ontology and use the ontology id of the top match
         search_result = bionty.search(name)
         if not search_result.empty:
@@ -124,6 +135,9 @@ for name in adata.obs['development_stage_original'].unique():
             record.save()
             record.add_synonym(name)
         else:
+            name_mapper[name] = "unknown"
+            ontology_id_mapper[name] = "unknown"
+    else:
             name_mapper[name] = "unknown"
             ontology_id_mapper[name] = "unknown"
 
@@ -139,8 +153,7 @@ name_mapper = {}
 ontology_id_mapper = {}
 
 for name in adata.obs['disease_original'].unique():
-    # 确保name不是None或空字符串
-    if pd.notna(name):
+    if name is not None and isinstance(name, str) and name.strip():  # Check whether name is empty or invalid
         # search the public ontology and use the ontology id of the top match
         search_result = bionty.search(name)
         if not search_result.empty:
@@ -152,6 +165,9 @@ for name in adata.obs['disease_original'].unique():
             record.save()
             record.add_synonym(name)
         else:
+            name_mapper[name] = "unknown"
+            ontology_id_mapper[name] = "unknown"
+    else:
             name_mapper[name] = "unknown"
             ontology_id_mapper[name] = "unknown"
 
@@ -167,8 +183,7 @@ name_mapper = {}
 ontology_id_mapper = {}
 
 for name in adata.obs['tissue_original'].unique():
-    # 确保name不是None或空字符串
-    if pd.notna(name):
+    if name is not None and isinstance(name, str) and name.strip():  # Check whether name is empty or invalid
         # search the public ontology and use the ontology id of the top match
         search_result = bionty.search(name)
         if not search_result.empty:
@@ -182,6 +197,9 @@ for name in adata.obs['tissue_original'].unique():
         else:
             name_mapper[name] = "unknown"
             ontology_id_mapper[name] = "unknown"
+    else:
+            name_mapper[name] = "unknown"
+            ontology_id_mapper[name] = "unknown"
 
 # Apply the mapping results to adata.obs
 adata.obs['tissue_ontology'] = adata.obs['tissue_original'].map(name_mapper)
@@ -191,7 +209,6 @@ adata.obs['tissue_ontology_id'] = adata.obs['tissue_original'].map(ontology_id_m
 # Define categorical variables and their mappings
 categoricals = {
       adata.obs.assay.name: bt.ExperimentalFactor.name,
-    #  adata.obs.assay.name: assay_field,
       adata.obs.cell_type_ontology.name: bt.CellType.name,
       adata.obs.cell_type_ontology_id.name: bt.CellType.ontology_id,
       adata.obs.development_stage_ontology.name: bt.DevelopmentalStage.name,
