@@ -5,6 +5,7 @@ from openai import OpenAI
 from fuzzywuzzy import fuzz
 from fuzzywuzzy import process
 from config import OPEN_API_KEY
+from pathlib import Path
 """
 Function: GPT3_turbo
 This function uses the GPT-3.5-turbo model from OpenAI.
@@ -118,7 +119,10 @@ Output:
 """
 def GPT_for_column(input_column):
     # 1. Read the prompt for column match
-    with open('prompt_column_match_2.txt') as f:
+    script_dir = Path(__file__).parent
+    file_name = 'prompt_column_match_2.txt'
+    file_path = script_dir / file_name
+    with file_path.open('r') as f:
         prompt = f.readline().strip('\n')
     
     # 2. Obtain the full input info by add the input_column information
