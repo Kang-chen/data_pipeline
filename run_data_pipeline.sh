@@ -42,14 +42,14 @@ if [ "$start_step" -le 2 ]; then
 fi
 
 # Step 3: Activate conda environment
-if [ "$start_step" -le 3 ]; then
+if [ "$start_step" -le 3 ] || { [ "$start_step" -ge 5 ] && [ "$start_step" -le 6 ]; }; then
     echo "Activating conda environment 'lamindb'..."
     conda activate lamindb
     check_error 3 "Conda environment activation failed."
 fi
 
 # Step 4: Log in to lamin
-if [ "$start_step" -le 4 ]; then
+if [ "$start_step" -le 4 ] || { [ "$start_step" -ge 5 ] && [ "$start_step" -le 6 ]; }; then
     echo "Logging in to lamin..."
     lamin login fujingge
     check_error 4 "Lamin login failed."

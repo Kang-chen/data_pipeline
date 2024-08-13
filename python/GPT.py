@@ -4,7 +4,7 @@ import os
 from openai import OpenAI
 from fuzzywuzzy import fuzz
 from fuzzywuzzy import process
-
+from config import OPEN_API_KEY
 """
 Function: GPT3_turbo
 This function uses the GPT-3.5-turbo model from OpenAI.
@@ -19,7 +19,6 @@ Output:
 
 """
 def GPT3_turbo(content):
-    OPEN_API_KEY = 'xxx'
     client = OpenAI(
         api_key=OPEN_API_KEY,
     )

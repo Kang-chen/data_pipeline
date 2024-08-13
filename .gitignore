@@ -1,3 +1,7 @@
 test/
 .ipynb_checkpoints/
 *.swp
+# Ignore config file containing sensitive information
+config.py
+__pycache__/
+.vscode/
