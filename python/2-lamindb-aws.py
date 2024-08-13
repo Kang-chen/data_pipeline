@@ -10,6 +10,7 @@ import pandas as pd
 from fuzzywuzzy import fuzz
 from fuzzywuzzy import process
 import subprocess
+from GPT import *
 
 
 subprocess.run(['lamin', 'init', '--storage', 's3://cartabio/ai/data/fujing_test', '--schema', 'bionty'])
@@ -35,14 +36,17 @@ required_columns = [
 
 # Initializes an empty dictionary to store match results
 obs_df = adata.obs.copy()
+
+''' fuzzy match
 matched_columns = {col: None for col in required_columns}
-
-
 # Iterate over existing columns and perform fuzzy matching
 for col in obs_df.columns:
     for req_col in required_columns:
         if req_col in col:
             matched_columns[req_col] = col
+'''
+
+matched_columns = GPT_for_column(obs_columns)
 
 
 # Print matching results
