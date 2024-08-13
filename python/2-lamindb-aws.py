@@ -21,6 +21,7 @@ ln.settings.storage_local = "./lamindb/"
 # load adata
 adata = sc.read_h5ad('./dataforload/kang_processing.h5ad')
 adata
+obs_columns = adata.obs.columns.tolist()
 
 
 # Defines the column name to add
