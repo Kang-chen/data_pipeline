@@ -10,28 +10,34 @@ import pandas as pd
 from fuzzywuzzy import fuzz
 from fuzzywuzzy import process
 import subprocess
-from GPT import *
+from GPT import *   
+
 
 
 subprocess.run(['lamin', 'init', '--storage', 's3://cartabio/ai/data/fujing_test', '--schema', 'bionty'])
 ln.setup.settings.instance._keep_artifacts_local = True
-ln.settings.storage_local = "./lamindb/"
+# ln.settings.storage_local = "./lamindb/"
 
 
 # load adata
-adata = sc.read_h5ad('./dataforload/kang_processing.h5ad')
+adata = sc.read_h5ad('../test/dataforload/kang_processing.h5ad')
+# adata = sc.read_h5ad('./dataforload/kang_processing.h5ad')
+
 adata
 obs_columns = adata.obs.columns.tolist()
 
 
 # Defines the column name to add
 required_columns = [
-    "dataset_id", "assay", 
-    "cell_type_original",  "cell_type_ontology", "cell_type_ontology_id",
-    "development_stage_original", "development_stage_ontology", "development_stage_ontology_id", 
-    "disease_original", "disease_ontology", "disease_ontology_id", 
-    "tissue_original", "tissue_ontology", "tissue_ontology_id",
-    "donor_id", "sex", "is_primary"
+    "dataset_id", 
+    "assay", 
+    "cell_type_original", # "cell_type_ontology", "cell_type_ontology_id",
+    "development_stage_original", #"development_stage_ontology", "development_stage_ontology_id", 
+    "disease_original",# "disease_ontology", "disease_ontology_id", 
+    "tissue_original",# "tissue_ontology", "tissue_ontology_id",
+    "donor_id",
+    "sex", 
+    "is_primary"
 ]
 
 
@@ -95,6 +101,7 @@ bionty = bt.CellType.public()  # access the public ontology through bionty
 
 name_mapper = {}
 ontology_id_mapper = {}
+
 
 for name in adata.obs['cell_type_original'].unique():
     if name is not None and isinstance(name, str) and name.strip():  # Check whether name is empty or invalid
@@ -210,6 +217,8 @@ for name in adata.obs['tissue_original'].unique():
 adata.obs['tissue_ontology'] = adata.obs['tissue_original'].map(name_mapper)
 adata.obs['tissue_ontology_id'] = adata.obs['tissue_original'].map(ontology_id_mapper)
 
+# All elements of the data box are coverted to string type
+adata.obs = adata.obs.applymap(str)
 
 # Define categorical variables and their mappings
 categoricals = {

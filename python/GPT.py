@@ -88,9 +88,9 @@ A dictionary where the keys are the target column names and the values are the b
 """
 def blur_search(obs_columns):
     target_columns = [
-    "dataset_id", "assay", "cell_type_ontology", "cell_type_original", 
-    "development_stage", "disease_original", "disease_ontology", 
-    "donor_id", "sex", "tissue_ontology", "tissue_original", "is_primary"]
+    "dataset_id", "assay", "cell_type_original", 
+    "development_stage_original", "disease_original", 
+    "donor_id", "sex", "tissue_original", "is_primary"]
     
     matched_columns = {}
     for target in target_columns:
