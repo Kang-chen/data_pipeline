@@ -20,8 +20,8 @@ ln.setup.settings.instance._keep_artifacts_local = True
 
 
 # load adata
-adata = sc.read_h5ad('../test/dataforload/kang_processing.h5ad')
-# adata = sc.read_h5ad('./dataforload/kang_processing.h5ad')
+# adata = sc.read_h5ad('../test/dataforload/kang_processing.h5ad')
+adata = sc.read_h5ad('./dataforload/kang_processing.h5ad')
 
 adata
 obs_columns = adata.obs.columns.tolist()
