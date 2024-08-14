@@ -10,8 +10,25 @@ import pandas as pd
 from fuzzywuzzy import fuzz
 from fuzzywuzzy import process
 import subprocess
+import argparse
 from GPT import *   
 
+
+
+# 创建解析器对象
+parser = argparse.ArgumentParser(description='Process some integers.')
+
+# 添加参数
+parser.add_argument('--source_id', type=str, required=True, help='The source ID to process')
+
+# 解析参数
+args = parser.parse_args()
+
+# 获取参数值
+source_id = args.source_id
+
+# 打印参数值
+print(f'Source ID: {source_id}')
 
 
 subprocess.run(['lamin', 'init', '--storage', 's3://cartabio/ai/data/fujing_test', '--schema', 'bionty'])
@@ -270,7 +287,7 @@ curate.validate()
 
 
 # save artifact
-artifact = curate.save_artifact(description="kang2")
+artifact = curate.save_artifact(description=source_id)
 
 
 # list the artifact in the S3 bucket

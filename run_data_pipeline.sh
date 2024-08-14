@@ -70,7 +70,7 @@ if [ "$start_step" -le 6 ]; then
 
     while [ $attempt -lt $max_retries ]; do
         echo "Running Python script 2-lamindb-aws.py (Attempt $((attempt+1))/$max_retries)..."
-        python $data_pipeline/python/2-lamindb-aws.py
+        python $data_pipeline/python/2-lamindb-aws.py --source_id $source_id
         if [ $? -eq 0 ]; then
             success=true
             break
