@@ -149,21 +149,21 @@ class LaminDBManager:
 
 # Main workflow
 def main():
-    # 创建解析器对象
-    # parser = argparse.ArgumentParser(description='Process some integers.')
+    创建解析器对象
+    parser = argparse.ArgumentParser(description='Process some integers.')
 
-    # # 添加参数
-    # parser.add_argument('--source_id', type=str, required=True, help='The source ID to process')
+    # 添加参数
+    parser.add_argument('--source_id', type=str, required=True, help='The source ID to process')
 
-    # # 解析参数
-    # args = parser.parse_args()
+    # 解析参数
+    args = parser.parse_args()
 
-    # # 获取参数值
-    # source_id = args.source_id
+    # 获取参数值
+    source_id = args.source_id
 
-    # # 打印参数值
-    # print(f'Source ID: {source_id}')
-    source_id = "GSE161382"
+    # 打印参数值
+    print(f'Source ID: {source_id}')
+    # source_id = "GSE161382"
     lamin_db_manager = LaminDBManager('s3://cartabio/ai/data/fujing_test')
     lamin_db_manager.initialize()
 
