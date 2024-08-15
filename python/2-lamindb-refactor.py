@@ -167,7 +167,8 @@ def main():
     lamin_db_manager = LaminDBManager('s3://cartabio/ai/data/fujing_test')
     lamin_db_manager.initialize()
 
-    processor = DataProcessor('/home/ubuntu/kchen/data_pipeline/test/dataforload/kang_processing.h5ad',source_id)
+    # processor = DataProcessor('/home/ubuntu/kchen/data_pipeline/test/dataforload/kang_processing.h5ad',source_id)
+    processor = DataProcessor('./dataforload/kang_processing.h5ad',source_id)
     artifact = processor.process_data()
 
     print(lamin_db_manager.list_artifacts())
