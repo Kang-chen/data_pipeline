@@ -10,39 +10,67 @@ import pandas as pd
 from fuzzywuzzy import fuzz
 from fuzzywuzzy import process
 import subprocess
+import argparse
+from GPT import *   
+
+
+
+# 创建解析器对象
+parser = argparse.ArgumentParser(description='Process some integers.')
+
+# 添加参数
+parser.add_argument('--source_id', type=str, required=True, help='The source ID to process')
+
+# 解析参数
+args = parser.parse_args()
+
+# 获取参数值
+source_id = args.source_id
+
+# 打印参数值
+print(f'Source ID: {source_id}')
 
 
 subprocess.run(['lamin', 'init', '--storage', 's3://cartabio/ai/data/fujing_test', '--schema', 'bionty'])
 ln.setup.settings.instance._keep_artifacts_local = True
-ln.settings.storage_local = "./lamindb/"
+# ln.settings.storage_local = "./lamindb/"
 
 
 # load adata
+# adata = sc.read_h5ad('../test/dataforload/kang_processing.h5ad')
 adata = sc.read_h5ad('./dataforload/kang_processing.h5ad')
+
 adata
+obs_columns = adata.obs.columns.tolist()
 
 
 # Defines the column name to add
 required_columns = [
-    "dataset_id", "assay", 
-    "cell_type_original",  "cell_type_ontology", "cell_type_ontology_id",
-    "development_stage_original", "development_stage_ontology", "development_stage_ontology_id", 
-    "disease_original", "disease_ontology", "disease_ontology_id", 
-    "tissue_original", "tissue_ontology", "tissue_ontology_id",
-    "donor_id", "sex", "is_primary"
+    "dataset_id", 
+    "assay", 
+    "cell_type_original", # "cell_type_ontology", "cell_type_ontology_id",
+    "development_stage_original", #"development_stage_ontology", "development_stage_ontology_id", 
+    "disease_original",# "disease_ontology", "disease_ontology_id", 
+    "tissue_original",# "tissue_ontology", "tissue_ontology_id",
+    "donor_id",
+    "sex", 
+    "is_primary"
 ]
 
 
 # Initializes an empty dictionary to store match results
 obs_df = adata.obs.copy()
+
+''' fuzzy match
 matched_columns = {col: None for col in required_columns}
-
-
 # Iterate over existing columns and perform fuzzy matching
 for col in obs_df.columns:
     for req_col in required_columns:
         if req_col in col:
             matched_columns[req_col] = col
+'''
+
+matched_columns = GPT_for_column(obs_columns)
 
 
 # Print matching results
@@ -90,6 +118,7 @@ bionty = bt.CellType.public()  # access the public ontology through bionty
 
 name_mapper = {}
 ontology_id_mapper = {}
+
 
 for name in adata.obs['cell_type_original'].unique():
     if name is not None and isinstance(name, str) and name.strip():  # Check whether name is empty or invalid
@@ -205,6 +234,8 @@ for name in adata.obs['tissue_original'].unique():
 adata.obs['tissue_ontology'] = adata.obs['tissue_original'].map(name_mapper)
 adata.obs['tissue_ontology_id'] = adata.obs['tissue_original'].map(ontology_id_mapper)
 
+# All elements of the data box are coverted to string type
+adata.obs = adata.obs.applymap(str)
 
 # Define categorical variables and their mappings
 categoricals = {
@@ -256,7 +287,7 @@ curate.validate()
 
 
 # save artifact
-artifact = curate.save_artifact(description="kang2")
+artifact = curate.save_artifact(description=source_id)
 
 
 # list the artifact in the S3 bucket
