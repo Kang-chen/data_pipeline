@@ -10,6 +10,7 @@ import pandas as pd
 from fuzzywuzzy import fuzz
 from fuzzywuzzy import process
 import subprocess
+import argparse
 from GPT import *
 
 class DataProcessor:
@@ -126,6 +127,81 @@ class DataProcessor:
 
         return artifact
 
+def process_artifact_with_source_id(artifact, source_id):
+    # 加载Excel文件
+    file_path = './Data_collection.xlsx'
+    df = pd.read_excel(file_path)
+            
+    # 根据source_id查找对应的行
+    row = df[df['source_id'] == source_id].squeeze()
+        
+    if row.empty:
+        raise ValueError(f"No data found for source_id: {source_id}")
+
+
+    # Feature中 添加信息
+    ln.Feature(name='data_type', dtype='cat[ULabel]').save()
+    ln.Feature(name='species', dtype='cat[ULabel]').save()
+    ln.Feature(name='diseases', dtype='cat[ULabel]').save()
+    ln.Feature(name='tissue_type', dtype='cat[ULabel]').save()
+    ln.Feature(name='has_disease_status', dtype='bool').save()
+    ln.Feature(name='has_cell_type', dtype='bool').save()
+    ln.Feature(name='has_gender', dtype='bool').save()
+    ln.Feature(name='has_age', dtype='bool').save()
+    ln.Feature(name='has_raw_data', dtype='cat[ULabel]').save()
+    ln.Feature(name='library_protocol', dtype='cat[ULabel]').save()
+    ln.Feature(name='pubmed_id', dtype='cat[ULabel]').save()
+    ln.Feature(name='publication_title', dtype='cat[ULabel]').save()
+    
+    # 提取需要的列值
+    data_type = row['data_type']
+    species = row['species']
+    diseases = row['diseases']
+    tissue_type = row['tissue_type']
+    library_protocol = row['library_protocol']
+    has_raw_data = str(row['has_raw_data'])
+    pubmed_id = str(row['pubmed_id']) 
+    publication_title = row['publication_title']
+
+    # 转换为ULabel对象并保存
+    data_type_label = ln.ULabel.from_values([data_type], create=True)
+    species_label = ln.ULabel.from_values([species], create=True)
+    diseases_label = ln.ULabel.from_values([diseases], create=True)
+    tissue_type_label = ln.ULabel.from_values([tissue_type], create=True)
+    library_protocol_label = ln.ULabel.from_values([library_protocol], create=True)
+    has_raw_data_label = ln.ULabel.from_values([has_raw_data], create=True)
+    pubmed_id_label = ln.ULabel.from_values([pubmed_id], create=True)
+    publication_title_label = ln.ULabel.from_values([publication_title], create=True)
+
+    # 保存这些值
+    ln.save(data_type_label)
+    ln.save(species_label)
+    ln.save(diseases_label)
+    ln.save(tissue_type_label)
+    ln.save(library_protocol_label)
+    ln.save(has_raw_data_label)
+    ln.save(pubmed_id_label)
+    ln.save(publication_title_label)
+
+    # 将这些值添加到artifact中
+    artifact.features.add_values({
+        "data_type": data_type_label,
+        "species": species_label,
+        "diseases": diseases_label,
+        "tissue_type": tissue_type_label,
+        "has_disease_status": bool(row['has_disease_status']),
+        "has_cell_type": bool(row['has_cell_type']),
+        "has_gender": bool(row['has_gender']),
+        "has_age": bool(row['has_age']),
+        "has_raw_data": has_raw_data_label,
+        "library_protocol": library_protocol_label,
+        "pubmed_id": pubmed_id_label,
+        "publication_title": publication_title_label
+    })
+    artifact.save()
+
+    return artifact
+
 class LaminDBManager:
     def __init__(self, storage_path):
         self.storage_path = storage_path
@@ -149,7 +225,7 @@ class LaminDBManager:
 
 # Main workflow
 def main():
-    创建解析器对象
+    # 创建解析器对象
     parser = argparse.ArgumentParser(description='Process some integers.')
 
     # 添加参数
@@ -171,6 +247,9 @@ def main():
     processor = DataProcessor('./dataforload/kang_processing.h5ad',source_id)
     artifact = processor.process_data()
 
+    # 添加descrition
+    artifact = process_artifact_with_source_id(artifact, source_id)
+    
     print(lamin_db_manager.list_artifacts())
     lamin_db_manager.upload_artifact(artifact)
     lamin_db_manager.view_tree()
