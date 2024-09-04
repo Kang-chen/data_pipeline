@@ -31,7 +31,7 @@ source_id = args.source_id
 print(f'Source ID: {source_id}')
 
 
-subprocess.run(['lamin', 'init', '--storage', 's3://cartabio/ai/data/fujing_test', '--schema', 'bionty'])
+subprocess.run(['lamin', 'init', '--storage', 's3://cartabio/ai/data/test', '--schema', 'bionty'])
 ln.setup.settings.instance._keep_artifacts_local = True
 # ln.settings.storage_local = "./lamindb/"
 
