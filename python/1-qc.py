@@ -290,6 +290,18 @@ filtered_adata.obs['is_primary'] = (
 # Update adata
 adata = filtered_adata
 
+# CSC to CSR
+if sp.issparse(adata.X):
+    if isinstance(adata.X, sp.csc_matrix):
+        adata.X = adata.X.tocsr()
+        print("adata.X has been converted from CSC to CSR format.")
+    else:
+        print("adata.X is not in CSC format, no conversion needed.")
+else:
+    print("adata.X is not a sparse matrix.")
+
+# Add a new column 'dataset_id' to adata.obs with the value from args.source_id
+adata.obs['dataset_id'] = args.source_id
 
 # Print basic information after preprocessing
 print(f"Post-processing number of genes: {adata.shape[1]}")
