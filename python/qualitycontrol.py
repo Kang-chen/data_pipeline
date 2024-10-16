@@ -289,6 +289,7 @@ if __name__ == "__main__":
     # save adata
     adata.obs['dataset_id'] = args.source_id
     adata.obs['organisms'] = species
+    adata.X = adata.X.astype('float32')
     save_adata(adata)
 
     # delete folders
