@@ -1,6 +1,9 @@
 #!/usr/bin/env python
 # coding: utf-8
 
+
+
+
 # import packages
 import scanpy as sc
 import pandas as pd
@@ -10,13 +13,20 @@ import ftplib
 import gzip
 import shutil
 import tarfile
+import mygene
+import statistics
 import argparse
 import warnings
+
+
+
 
 # Ignore the warnings
 warnings.filterwarnings("ignore", category=UserWarning, message="Observation names are not unique")
 warnings.filterwarnings("ignore", category=UserWarning, message="Variable names are not unique")
 warnings.filterwarnings("ignore", category=UserWarning, message="Trying to modify attribute `.obs` of view, initializing view as actual")
+
+
 
 
 # define rguments
@@ -25,6 +35,8 @@ def parse_args():
     parser.add_argument('--source_id', type=str, required=True, help="GEO series ID (e.g., GSE156793)")
     parser.add_argument('--output_dir', type=str, default='./geo_supp_files', help="Output directory for GEO files")
     return parser.parse_args()
+
+
 
 
 # Download supplementary files in GEO
@@ -52,10 +64,13 @@ def download_geo_supp_files(geo_id, output_dir):
         local_file_path = os.path.join(output_dir, file)
         with open(local_file_path, 'wb') as local_file:
             ftp.retrbinary(f"RETR {file}", local_file.write)
+            print(f"Downloaded: {file}")
 
     # shut down ftp
-    print(f"Downloaded: All {geo_id} files.")
     ftp.quit()
+
+
+
 
 
 # Detect tar files
@@ -75,6 +90,10 @@ def check_and_extract_raw_tar(output_dir):
             with tarfile.open(tar_path, "r") as tar:
                 tar.extractall(path=output_dir)
             print(f"Extraction complete for {tar_file}.")
+        else:
+            print(f"{tar_file} is not a valid tar file.")
+
+
 
 
 # Detect tar.gz files for sub files
@@ -94,33 +113,80 @@ def check_and_extract_tar_gz(output_dir):
             with tarfile.open(tar_gz_path, "r:gz") as tar:
                 tar.extractall(path=output_dir)
             print(f"Extraction complete for {tar_gz_file}.")
+        else:
+            print(f"{tar_gz_file} is not a valid tar.gz file.")
+
+
 
 
 # remove header
 def check_and_remove_header(file_path, file_type):
     lines = []
+    header = None
+    barcode_column = 0  # Default to first column
+    column_lengths = []
+
     with gzip.open(file_path, 'rt') as f:
         for i, line in enumerate(f):
-            lines.append(line)
             if i == 0:
                 first_line = line.strip().split('\t')
-
-                # for features
                 if file_type == 'features':
                     header_keywords = ['gene', 'id', 'x']
-                    if any(keyword in first_line[0].lower() for keyword in header_keywords):
-                        lines = lines[1:]  # remove header
-                
-                # for barcode
                 elif file_type == 'barcodes':
                     header_keywords = ['barcode', 'id', 'x']
-                    if any(keyword in first_line[0].lower() for keyword in header_keywords):
-                        lines = lines[1:]  # remove header
-    
-    # overwrite
+                
+                if any(keyword in first_line[0].lower() for keyword in header_keywords):
+                    print(f"Header found in {file_type} file:", first_line)
+                    header = first_line
+                    continue
+                else:
+                    print(f"No header found in {file_type} file.")
+            
+            columns = line.strip().split('\t')
+            lines.append(columns)
+            
+            if len(column_lengths) < len(columns):
+                column_lengths.extend([[] for _ in range(len(columns) - len(column_lengths))])
+            
+            for j, col in enumerate(columns):
+                column_lengths[j].append(len(col))
+
+    # Analyze column lengths to identify the likely barcode column
+    if file_type == 'barcodes' and len(column_lengths) > 1:
+        avg_lengths = [statistics.mean(lengths) for lengths in column_lengths]
+        std_lengths = [statistics.stdev(lengths) if len(lengths) > 1 else 0 for lengths in column_lengths]
+        
+        # Choose the column with the highest average length and lowest standard deviation
+        barcode_column = max(range(len(avg_lengths)), 
+                             key=lambda i: (avg_lengths[i], -std_lengths[i]))
+
+    # Print file structure information
+    print(f"\nFile structure for {file_type}:")
+    print(f"Total lines: {len(lines) + (1 if header else 0)}")
+    print(f"Header: {header if header else 'None'}")
+    print(f"Number of columns: {len(column_lengths)}")
+    print(f"Average column lengths: {[round(statistics.mean(lengths), 2) for lengths in column_lengths]}")
+    if file_type == 'barcodes' and len(column_lengths) > 1:
+        print(f"Identified barcode column: {barcode_column}")
+    print(f"First few lines of content:")
+    for line in lines[:5]:
+        print('\t'.join(line))
+
+    # Write back the file without header, using identified barcode column for barcodes
     with gzip.open(file_path, 'wt') as f_out:
-        for line in lines:
-            f_out.write(line)
+        if file_type == 'barcodes':
+            for line in lines:
+                f_out.write(f"{line[barcode_column]}\n")
+        else:
+            for line in lines:
+                f_out.write('\t'.join(line) + '\n')
+
+    print(f"File saved {'with barcodes from column ' + str(barcode_column) if file_type == 'barcodes' else 'without header'}: {file_path}")
+    
+    return header, barcode_column, column_lengths
+
+
+
 
 
 # check and update features
@@ -131,24 +197,36 @@ def check_and_update_features(file_path):
 
     # Determine if there are only one columns
     if features.shape[1] == 1:
+        print("Features file has only one column, adding row numbers as first column and 'Gene Expression' as third column...")
 
         # Add a first and third column
         features[1] = range(1, len(features) + 1)
         features[2] = 'Gene Expression'
+
         new_order = [1, 0, 2]
         features = features.iloc[:, new_order]
+
+
         with gzip.open(file_path, 'wt') as f_out:
             features.to_csv(f_out, sep='\t', index=False, header=False)
-
+        print(f"Updated features file saved: {file_path}")
     
     # Determine if there are only two columns
     if features.shape[1] == 2:
+        print("Features file has only two columns, adding third column 'Gene Expression'...")
 
         # Add a third column with the value 'Gene Expression'
         features[2] = 'Gene Expression'
+
         # Overwrite source file
         with gzip.open(file_path, 'wt') as f_out:
             features.to_csv(f_out, sep='\t', index=False, header=False)
+        print(f"Updated features file saved: {file_path}")
+    else:
+        print("Features file already has three columns, no changes made.")
+
+
+
 
 
 # identify species
@@ -164,6 +242,7 @@ def identify_species(adata):
         mouse_genes = sum(gene.startswith("ENSMUS") for gene in gene_names)
     
     return 'human' if human_genes > mouse_genes else 'mouse'
+
 
 
 # filter adata by species
@@ -183,6 +262,10 @@ def filter_adata_by_species(adata_list):
             mouse_count += 1
             mouse_adata.append(adata)
     
+    # print AnnData count
+    print(f"Human AnnData count: {human_count}")
+    print(f"Mouse AnnData count: {mouse_count}")
+    
     # Retaining adata according to counts
     if human_count > mouse_count:
         print("Retaining human samples only.")
@@ -192,45 +275,77 @@ def filter_adata_by_species(adata_list):
         return mouse_adata
 
 
+
+
 # convert gene symbols to ensembl
-def convert_symbol_to_ensembl(adata, human_mapping="../python/geneid/human_grch38_symbol_ensembl.csv", mouse_mapping="../python/geneid/mouse_grcm39_symbol_ensembl.csv"):
+def convert_symbol_to_ensembl(adata):
+    # Ensure we're working with a copy, not a view
+    adata = adata.copy()
     
-    # Determine the mapping file based on the species
-    species = identify_species(adata)
-    if species.lower() == "human":
-        mapping_file = human_mapping
-    elif species.lower() == "mouse":
-        mapping_file = mouse_mapping
+    mg = mygene.MyGeneInfo()
+
+    # Function to check if gene names are symbols or Ensembl IDs
+    def is_symbol(gene_names):
+        gene_prefixes = ["ENSG", "ENSMUS"]
+        return not any(gene_names[0].startswith(prefix) for prefix in gene_prefixes)
+
+    # Determine if the gene names are symbols or already Ensembl IDs
+    if is_symbol(adata.var.index):
+        print("Detected gene names as symbols.")
+
+        # Identify species
+        species = identify_species(adata)  # Use your species detection function here
+        print(f"Detected species: {species}")
+
+        # Determine query parameters based on species
+        species_map = {
+            "human": ("symbol", "ensembl.gene", "human", "grch37"),
+            "mouse": ("symbol", "ensembl.gene", "mouse", "grcm38")
+        }
+        if species not in species_map:
+            raise ValueError("Species could not be identified. Please provide valid human or mouse data.")
+
+        # Unpack query parameters
+        scopes, fields, species_query, build_version = species_map[species]
+
+        # Perform batch query
+        query_result = mg.querymany(adata.var.index.tolist(), scopes=scopes, fields=fields, as_dataframe=True, species=species_query, build=build_version)
+
     else:
-        raise ValueError("Species must be either 'human' or 'mouse'.")
-    
-    # Load the appropriate mapping file
-    ensembl_mapping = pd.read_csv(mapping_file)
-    ensembl_mapping.columns = ['EnsemblID', 'GeneSymbol']
-    ensembl_mapping.set_index('GeneSymbol', inplace=True)
-    
-    # Check if adata.var.index is in EnsemblID format
-    if adata.var.index.str.startswith('ENSG').all() or adata.var.index.str.startswith('ENSMUSG').all():
+        print("Gene names are already Ensembl IDs. No conversion necessary.")
         return adata
-    else:       
-        # Extract gene symbols from adata.var.index
-        gene_symbols = adata.var.index
-        matched_ensembl_ids = ensembl_mapping.reindex(gene_symbols)['EnsemblID']
-        
-        # Filter out genes that could not be matched to Ensembl IDs
-        valid_ensembl_ids = matched_ensembl_ids.dropna()
 
-        # Remove duplicates
-        valid_ensembl_ids = valid_ensembl_ids[~valid_ensembl_ids.index.duplicated(keep='first')]
-        adata = adata[:, ~adata.var.index.duplicated(keep='first')]
-        
-        # Retain only the genes that could be matched successfully
-        adata = adata[:, valid_ensembl_ids.index]
-        adata.var.index = valid_ensembl_ids.values
+    # Reset index, remove duplicates, and fill missing values
+    query_result = query_result.reset_index().drop_duplicates(subset='query')
+    query_result['ensembl.gene'] = query_result['ensembl.gene'].fillna('unmapped')
 
-        print(f"Successfully converted Gene Symbols to Ensembl IDs, retained {len(valid_ensembl_ids)} genes.")
-        
-        return adata
+    # Create a mapping from gene symbols to Ensembl IDs
+    gene_map = query_result.set_index('query')['ensembl.gene'].to_dict()
+
+    # Update adata.var with the mapped Ensembl IDs
+    adata.var['ensembl_id'] = adata.var.index.map(gene_map).fillna('unmapped')
+
+    # Count and remove unmapped genes
+    unmapped_count = (adata.var['ensembl_id'] == 'unmapped').sum()
+    adata = adata[:, adata.var['ensembl_id'] != 'unmapped']
+
+    # Count and remove duplicate Ensembl IDs, keeping the first occurrence
+    duplicate_count = adata.var['ensembl_id'].duplicated().sum()
+    adata = adata[:, ~adata.var['ensembl_id'].duplicated(keep='first')]
+
+    print(f"Number of unmapped genes removed: {unmapped_count}")
+    print(f"Number of duplicate Ensembl IDs removed: {duplicate_count}")
+
+    # Set the Ensembl IDs as the new index
+    adata.var_names = adata.var['ensembl_id']
+    adata.var = adata.var.set_index('ensembl_id')
+
+    print("Gene symbols converted to Ensembl IDs. Unmapped and duplicate genes removed.")
+    print(f"Original number of genes: {len(gene_map)}")
+    print(f"Final number of genes: {adata.n_vars}")
+    
+    return adata
+
 
 
 
@@ -242,11 +357,20 @@ def filter_adata_by_gene_count(adata_list, gene_threshold=3000):
     for adata in adata_list:
         gene_count = adata.var.shape[0] 
         
+        print(f"AnnData object has {gene_count} genes.")
+        
         # save object more than 3000
         if gene_count > gene_threshold:
             filtered_adata_list.append(adata)
+        else:
+            print(f"AnnData object with {gene_count} genes discarded (less than {gene_threshold} genes).")
+    
+    # print saved adata numbers
+    print(f"Retained {len(filtered_adata_list)} AnnData objects with gene count greater than {gene_threshold}.")
     
     return filtered_adata_list
+
+
 
 
 # check and transpose adata
@@ -264,13 +388,22 @@ def check_and_transpose_adata(adata):
                 any(name in mouse_gene_symbols for name in name_list))
 
     # Check if var_names and obs_names contain gene names
+    var_has_genes = contains_gene_names(adata.var_names)
     obs_has_genes = contains_gene_names(adata.obs_names)
 
+    # If var_names already contain gene names, do nothing
+    if var_has_genes:
+        print("var_names contains gene names. No action required.")
     # If obs_names contain gene names, transpose the data
-    if obs_has_genes:
+    elif obs_has_genes:
+        print("obs_names contains gene names. Transposing the data...")
         adata = adata.transpose()
+    else:
+        print("No gene names detected in var_names or obs_names.")
 
     return adata
+
+
 
 
 # filter single adata by gene count
@@ -282,9 +415,138 @@ def filter_single_adata_by_gene_count(adata, gene_threshold=3000):
         return None 
 
 
-# read and merge 10x files
-def read_and_merge_mtx_files(output_dir):
+
+
+# detect and process metadata
+def detect_and_process_metadata(output_dir, adata):
+    files = os.listdir(output_dir)
+    print(f"Files in directory: {files}")
     
+    meta_keywords = ['meta', 'metadata', 'annotation', 'celltype', 'cluster', 'cell', 'readme']
+    count_keywords = ['count', 'raw', 'umi', 'smart', 'express', 'matrix']
+    meta_files = [f for f in files if any(keyword in f.lower() for keyword in meta_keywords) 
+                  and not any(keyword in f.lower() for keyword in count_keywords)
+                  and f.lower().endswith(('.txt.gz', '.tsv.gz', '.csv.gz', '.txt', '.tsv', '.csv', '.xlsx'))]
+    
+    print(f"Detected metadata files: {meta_files}")
+    
+    processed_files = []
+    
+    def process_metadata_file(file, file_path):
+        try:
+            if file.endswith('.xlsx'):
+                meta_df = pd.read_excel(file_path)
+            elif file.endswith('.gz'):
+                meta_df = pd.read_csv(file_path, compression='gzip', sep=None, engine='python')
+            else:
+                meta_df = pd.read_csv(file_path, sep=None, engine='python')
+            
+            # Store the original metadata as a DataFrame in uns
+            adata.uns[f'original_metadata_{file}'] = meta_df.copy()
+            
+            potential_id_columns = [col for col in meta_df.columns if col.lower() in ['cell', 'barcode', 'cell_id', 'cell.id', 'cell.name', 'cell_name']]
+            
+            if potential_id_columns:
+                id_column = potential_id_columns[0]
+                print(f"Using column '{id_column}' as cell barcodes for {file}")
+                meta_df.set_index(id_column, inplace=True)
+            elif meta_df.index.name is None and meta_df.index.dtype == 'object':
+                print(f"Using row names as cell barcodes for {file}")
+                meta_df.index.name = 'cell_barcode'
+            else:
+                print(f"Warning: No cell ID column found in {file}. Using the index as is.")
+            
+            meta_df.index = meta_df.index.astype(str)
+            
+            matching_indices = adata.obs.index.astype(str).isin(meta_df.index)
+            matched_cells = matching_indices.sum()
+            
+            if matched_cells == 0:
+                print(f"Warning: No cell barcodes from {file} matched with the AnnData object. No changes made to adata.obs.")
+                return
+            
+            for col in meta_df.columns:
+                if col not in adata.obs.columns:
+                    # Determine the appropriate dtype for the new column
+                    if pd.api.types.is_numeric_dtype(meta_df[col]):
+                        adata.obs[col] = pd.Series(dtype=meta_df[col].dtype)
+                    else:
+                        # For non-numeric types, use object dtype to accommodate various data types
+                        adata.obs[col] = pd.Series(dtype='object')
+                    
+                    # Add the data, preserving the original dtype
+                    adata.obs.loc[matching_indices, col] = meta_df.loc[adata.obs.index[matching_indices].astype(str), col].values
+            
+            print(f"Metadata from {file} has been added to the AnnData object and stored in uns.")
+            print(f"Matched {matched_cells} cells out of {adata.n_obs} total cells.")
+            processed_files.append(file)
+        except Exception as e:
+            print(f"Error processing {file}: {str(e)}")
+            import traceback
+            traceback.print_exc()
+    
+    if meta_files:
+        print("Metadata files detected:")
+        for i, file in enumerate(meta_files):
+            print(f"{i+1}. {file}")
+        
+        # Process metadata files
+        for file in meta_files:
+            file_path = os.path.join(output_dir, file)
+            process_metadata_file(file, file_path)
+        
+        print(f"Metadata processing completed. {len(processed_files)} files were processed.")
+    else:
+        print("No metadata files detected automatically. Checking for other potential metadata files...")
+        other_files = [f for f in files if not any(keyword in f.lower() for keyword in count_keywords) 
+                       and f.lower().endswith(('.txt.gz', '.tsv.gz', '.csv.gz', '.txt', '.tsv', '.csv', '.xlsx'))]
+        
+        if other_files:
+            print("Other potential metadata files found:")
+            for i, file in enumerate(other_files):
+                print(f"{i+1}. {file}")
+            
+            while True:
+                choice = input("Enter the number of the file you want to inspect as potential metadata (or 'done' if finished): ")
+                if choice.lower() == 'done':
+                    break
+                try:
+                    file_to_inspect = other_files[int(choice) - 1]
+                    file_path = os.path.join(output_dir, file_to_inspect)
+                    
+                    # Read and display the first few rows
+                    if file_to_inspect.endswith('.xlsx'):
+                        df = pd.read_excel(file_path, nrows=5)
+                    elif file_to_inspect.endswith('.gz'):
+                        df = pd.read_csv(file_path, compression='gzip', sep=None, engine='python', nrows=5)
+                    else:
+                        df = pd.read_csv(file_path, sep=None, engine='python', nrows=5)
+                    
+                    print(f"\nFirst few rows of {file_to_inspect}:")
+                    print(df)
+                    
+                    use_as_metadata = input("Do you want to use this file as metadata? (yes/no): ")
+                    if use_as_metadata.lower() == 'yes':
+                        process_metadata_file(file_to_inspect, file_path)
+                except Exception as e:
+                    print(f"Error processing file: {str(e)}")
+        else:
+            print("No potential metadata files found.")
+    
+    # Ensure adata.uns['metadata'] exists even if empty
+    if 'metadata' not in adata.uns:
+        adata.uns['metadata'] = []
+    
+    # Log processed files
+    adata.uns['processed_metadata_files'] = processed_files
+    
+    return adata
+
+
+
+
+# # read and merge 10x files
+def read_and_merge_mtx_files(output_dir):
     files_and_dirs = os.listdir(output_dir)
     files = [f for f in files_and_dirs if os.path.isfile(os.path.join(output_dir, f))]
     dirs = [d for d in files_and_dirs if os.path.isdir(os.path.join(output_dir, d))]
@@ -315,19 +577,34 @@ def read_and_merge_mtx_files(output_dir):
         if not os.path.exists(folder_name):
             os.makedirs(folder_name)
 
-        # move flies and rename
+        # move files and rename
         shutil.move(os.path.join(output_dir, feature_file), os.path.join(folder_name, 'features.tsv.gz'))
         shutil.move(os.path.join(output_dir, barcode_file), os.path.join(folder_name, 'barcodes.tsv.gz'))
         shutil.move(os.path.join(output_dir, matrix_file), os.path.join(folder_name, 'matrix.mtx.gz'))
         
-        # check features
-        check_and_remove_header(os.path.join(folder_name, 'features.tsv.gz'), file_type='features')
-        check_and_remove_header(os.path.join(folder_name, 'barcodes.tsv.gz'), file_type='barcodes')
+        # check features and barcodes
+        _, _, _ = check_and_remove_header(os.path.join(folder_name, 'features.tsv.gz'), file_type='features')
+        barcodes_header, barcode_column, column_lengths = check_and_remove_header(os.path.join(folder_name, 'barcodes.tsv.gz'), file_type='barcodes')
         check_and_update_features(os.path.join(folder_name, 'features.tsv.gz'))
 
         # read 10x files
         print(f"Reading {folder_name}...")
-        adata = sc.read_10x_mtx(folder_name, var_names='gene_symbols')
+        adata = sc.read_10x_mtx(folder_name, var_names='gene_symbols', cache=True)
+        
+        # If there were additional columns in the barcodes file, add them to adata.obs
+        if len(column_lengths) > 1:
+            with gzip.open(os.path.join(folder_name, 'barcodes.tsv.gz'), 'rt') as f:
+                original_barcodes_data = [line.strip().split('\t') for line in f]
+            
+            if barcodes_header:
+                column_names = barcodes_header
+            else:
+                column_names = [f'barcode_col_{i}' for i in range(len(column_lengths))]
+            
+            for i, col_name in enumerate(column_names):
+                if i != barcode_column:
+                    adata.obs[col_name] = [row[i] if i < len(row) else '' for row in original_barcodes_data]
+
         adata = filter_single_adata_by_gene_count(adata)
         if adata is None:
             continue
@@ -338,7 +615,7 @@ def read_and_merge_mtx_files(output_dir):
     for folder in dirs:
         folder_path = os.path.join(output_dir, folder)
         print(f"Directly reading from folder {folder_path}...")
-        adata = sc.read_10x_mtx(folder_path, var_names='gene_symbols')
+        adata = sc.read_10x_mtx(folder_path, var_names='gene_symbols', cache=True)
         adata = filter_single_adata_by_gene_count(adata)
         if adata is None:
             continue
@@ -358,6 +635,8 @@ def read_and_merge_mtx_files(output_dir):
     return adata_merged
 
 
+
+
 # read and merge h5 files
 def read_and_merge_h5_files(output_dir):
     files = os.listdir(output_dir)
@@ -368,6 +647,7 @@ def read_and_merge_h5_files(output_dir):
                        and not any(exclude in f.lower() for exclude in exclude_keywords)])
     
     if not h5_files:
+        print("No .h5 files found in the directory.")
         return None
     
     adata_list = []
@@ -395,6 +675,8 @@ def read_and_merge_h5_files(output_dir):
     return adata_merged
 
 
+
+
 # read and merge h5ad files
 def read_and_merge_h5ad_files(output_dir):
     files = os.listdir(output_dir)
@@ -407,6 +689,7 @@ def read_and_merge_h5ad_files(output_dir):
                             and not any(exclude in f.lower() for exclude in exclude_keywords)])
     
     if not (h5ad_files or h5ad_gz_files):
+        print("No .h5ad or .h5ad.gz files found in the directory.")
         return None
     
     adata_list = []
@@ -465,6 +748,8 @@ def read_and_merge_h5ad_files(output_dir):
     return adata_merged
 
 
+
+
 # read and merge loom files
 def read_and_merge_loom_files(output_dir):
     files = os.listdir(output_dir)
@@ -477,6 +762,7 @@ def read_and_merge_loom_files(output_dir):
                             and not any(exclude in f.lower() for exclude in exclude_keywords)])
     
     if not (loom_files or loom_gz_files):
+        print("No .loom or .loom.gz files found in the directory.")
         return None
     
     adata_list = []
@@ -524,6 +810,7 @@ def read_and_merge_loom_files(output_dir):
     return adata_merged
 
 
+
 # read and merge txt/csv/tsv gz files
 def read_and_merge_txt_gz_files(output_dir):
 
@@ -536,6 +823,7 @@ def read_and_merge_txt_gz_files(output_dir):
                      or f.endswith('.txt') or f.endswith('.csv') or f.endswith('.tsv'))]
     
     if not txt_gz_files:
+        print("No count-related .txt, .csv, .tsv, .txt.gz, .csv.gz, or .tsv.gz files found in the directory.")
         return None
     
     adata_list = []
@@ -571,37 +859,32 @@ def read_and_merge_txt_gz_files(output_dir):
     return adata_merged
 
 
+
+
 # auto detect and process files
 def auto_detect_and_process_files(output_dir):
-    
-    # file list
     files = os.listdir(output_dir)
-    dirs = [d for d in files if os.path.isdir(os.path.join(output_dir, d))]
     
-    # define keywords
-    keywords = ['count', 'raw', 'data', 'umi', 'smart', 'express']
-    exclude_keywords = ['meta', 'process', 'normalized', 'annotations', 'celltype', 'ADT', 'cells', 'tissue']
-    
-    # detect file types
+    # Detect different file types
     mtx_files = [f for f in files if f.endswith('.mtx') or f.endswith('.mtx.gz')]
-    h5_files = sorted([f for f in files if f.endswith('.h5')
-                       and not any(exclude in f.lower() for exclude in exclude_keywords)])
-    h5ad_files = sorted([f for f in files if f.endswith('.h5ad')
-                         and not any(exclude in f.lower() for exclude in exclude_keywords)])
-    h5ad_gz_files = sorted([f for f in files if f.endswith('.h5ad.gz')
-                            and not any(exclude in f.lower() for exclude in exclude_keywords)])
-    loom_files = sorted([f for f in files if f.endswith('.loom')
-                         and not any(exclude in f.lower() for exclude in exclude_keywords)])
-    loom_gz_files = sorted([f for f in files if f.endswith('.loom.gz')
-                            and not any(exclude in f.lower() for exclude in exclude_keywords)])
+    h5_files = [f for f in files if f.endswith('.h5')]
+    h5ad_files = [f for f in files if f.endswith('.h5ad')]
+    h5ad_gz_files = [f for f in files if f.endswith('.h5ad.gz')]
+    loom_files = [f for f in files if f.endswith('.loom')]
+    loom_gz_files = [f for f in files if f.endswith('.loom.gz')]
+    
+    keywords = ['count', 'raw', 'data', 'umi', 'smart', 'express']
+    exclude_keywords = ['meta', 'process', 'normalized', 'annotations', 'celltype', 'adt', 'cells', 'tissue']
     txt_gz_files = [f for f in files if any(keyword in f.lower() for keyword in keywords) 
                 and not any(exclude in f.lower() for exclude in exclude_keywords) 
                 and (f.endswith('.txt.gz') or f.endswith('.csv.gz') or f.endswith('.tsv.gz')
                      or f.endswith('.txt') or f.endswith('.csv') or f.endswith('.tsv'))]
     
+    dirs = [d for d in os.listdir(output_dir) if os.path.isdir(os.path.join(output_dir, d))]
+    
     adata_list_combine = []
 
-    # process files according to file types
+    # Process files according to file types
     if mtx_files or dirs:
         print("MTX files detected, processing with read_and_merge_mtx_files...")
         adata_mtx = read_and_merge_mtx_files(output_dir)
@@ -627,33 +910,68 @@ def auto_detect_and_process_files(output_dir):
             adata_list_combine.append(adata_loom)
 
     if txt_gz_files:
-        print("TXT.GZ files detected, processing with read_and_merge_txt_gz_files...")
+        print("TXT/CSV/TSV files detected, processing with read_and_merge_txt_gz_files...")
         adata_txt_gz = read_and_merge_txt_gz_files(output_dir)
         if adata_txt_gz is not None:
             adata_list_combine.append(adata_txt_gz)
 
-    # merge adata
+    # Merge adata
     if len(adata_list_combine) > 1:
         print("Merging all detected AnnData objects...")
         adata_merged_combine = ad.concat(adata_list_combine, label="batch")
     elif len(adata_list_combine) == 1:
         adata_merged_combine = adata_list_combine[0]
+    else:
+        print("No valid data found.")
+        return None
+
+    # Process metadata
+    adata_merged_combine = detect_and_process_metadata(output_dir, adata_merged_combine)
 
     return adata_merged_combine
 
 
+
 # save adata
 def save_adata(adata):
-    
     save_dir = './process'
     save_path = os.path.join(save_dir, 'merged_adata.h5ad')
 
-    # create folders
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
+        print(f"Directory '{save_dir}' created.")
 
-    # save adata
-    adata.write(save_path)
+    try:
+        # Convert non-string objects to strings in all DataFrames in adata.uns
+        for key, value in adata.uns.items():
+            if isinstance(value, pd.DataFrame):
+                adata.uns[key] = value.astype(str)
+        
+        # Ensure all columns in adata.obs are compatible with HDF5 storage
+        for col in adata.obs.columns:
+            if adata.obs[col].dtype == 'object':
+                adata.obs[col] = adata.obs[col].astype(str)
+        
+        adata.write(save_path)
+        print(f"AnnData object saved to '{save_path}'.")
+    except Exception as e:
+        print(f"Error saving AnnData object: {str(e)}")
+        print("Detailed error information:")
+        import traceback
+        traceback.print_exc()
+
+    # Print the structure of uns
+    print("\nStructure of uns:")
+    for key, value in adata.uns.items():
+        print(f"{key}: {type(value)}")
+        if isinstance(value, dict):
+            print(f"  First few keys: {list(value.keys())[:5]}")
+        elif isinstance(value, pd.DataFrame):
+            print(f"  DataFrame shape: {value.shape}")
+            print(f"  DataFrame columns: {value.columns.tolist()}")
+            print(f"  DataFrame dtypes:\n{value.dtypes}")
+
+
 
 
 if __name__ == "__main__":
@@ -676,3 +994,51 @@ if __name__ == "__main__":
 
     # delete folders
     shutil.rmtree(output_dir)
+
+
+
+
+adata
+
+
+
+
+adata.var.head()
+
+
+
+
+
+adata.obs.head()
+
+
+
+
+# Print the keys in uns
+print("Keys in adata.uns:")
+print(adata.uns.keys())
+
+# Print the contents of each key in uns
+for key in adata.uns.keys():
+    print(f"\nContents of adata.uns['{key}']:")
+    print(adata.uns[key])
+
+# If you want to see the structure and types of the uns contents:
+def print_uns_structure(uns, indent=0):
+    for key, value in uns.items():
+        print('  ' * indent + f"{key}: ", end='')
+        if isinstance(value, dict):
+            print()
+            print_uns_structure(value, indent + 1)
+        elif isinstance(value, list):
+            print(f"List of {len(value)} items")
+            if value:
+                print('  ' * (indent + 1) + f"First item type: {type(value[0])}")
+                if isinstance(value[0], dict):
+                    print_uns_structure(value[0], indent + 2)
+        else:
+            print(f"{type(value)} - {str(value)[:50]}{'...' if len(str(value)) > 50 else ''}")
+
+print("\nStructure of adata.uns:")
+print_uns_structure(adata.uns)
+
