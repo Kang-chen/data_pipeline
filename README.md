@@ -17,28 +17,7 @@ This project provides a data processing pipeline that uses various scripts and t
 │ └── 2-lamindb-aws.py
 └── run_data_pipeline.sh
 ```
-```mermaid
-sequenceDiagram
-    actor User
-    participant Excel as Excel (Microsoft 365)
-    participant Script as run_data_pipeline.sh (AWS EC2)
-    participant DataExtract as DataExtract.py (AWS EC2)
-    participant QualityControl as QualityControl.py (AWS EC2)
-    participant UploadLamindb as UploadLamindb.py (AWS EC2)
-    participant LaminDB as LaminDB (AWS S3)
 
-    User->>Excel: Collect data in Excel
-    Excel-->>Script: Data available
-    User->>Script: Start pipeline
-    Script->>DataExtract: Run DataExtract.py
-    DataExtract-->>Script: Data extracted
-    Script->>QualityControl: Run QualityControl.py
-    QualityControl-->>Script: Data quality checked
-    Script->>UploadLamindb: Run UploadLamindb.py
-    UploadLamindb->>LaminDB: Upload data to AWS S3
-    LaminDB-->>UploadLamindb: Data uploaded
-    UploadLamindb-->>Script: Upload complete
-```
 
 ## Dependencies
 - Conda
