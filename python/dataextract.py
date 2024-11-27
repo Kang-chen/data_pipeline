@@ -125,7 +125,10 @@ def check_and_remove_header(file_path, file_type):
     header = None
     barcode_column = 0  # Default to first column
     column_lengths = []
-
+    
+    # 根据文件扩展名选择打开文件的方式
+    open_func = gzip.open if file_path.endswith('.gz') else open
+    
     with gzip.open(file_path, 'rt') as f:
         for i, line in enumerate(f):
             if i == 0:
@@ -232,7 +235,17 @@ def check_and_update_features(file_path):
 # identify species
 def identify_species(adata):
     gene_names = adata.var_names
-    is_symbol = not gene_names[0].startswith("ENSG") and not gene_names[0].startswith("ENSMUS")
+    print(f"Gene names: {gene_names}") 
+    # Check if gene_names is empty
+    if len(gene_names) == 0:
+        raise ValueError("The gene names list is empty. Please check the input data.")
+
+    try:
+       is_symbol = not gene_names[0].startswith("ENSG") and not gene_names[0].startswith("ENSMUS")
+    except IndexError:
+       raise ValueError("Gene names are not accessible. Please check the input data.")
+
+    # is_symbol = not gene_names[0].startswith("ENSG") and not gene_names[0].startswith("ENSMUS")
 
     if is_symbol:
         human_genes = sum(gene.startswith(("A1BG", "A2M", "NAT1")) for gene in gene_names)
@@ -543,7 +556,9 @@ def detect_and_process_metadata(output_dir, adata):
     return adata
 
 
-
+# get prefixes
+def extract_prefix(file_list):
+    return set([f.rsplit('_', 1)[0] for f in file_list])
 
 # # read and merge 10x files
 def read_and_merge_mtx_files(output_dir):
@@ -562,8 +577,18 @@ def read_and_merge_mtx_files(output_dir):
             print("Required feature, barcode, and matrix files not found.")
             return None
 
+    # # 调试输出文件列表
+    # print("Files found:", files)
+    # print("Features files:", features_files)
+    # print("Barcodes files:", barcodes_files)
+    # print("Matrix files:", matrix_files)
     # get prefixes
-    prefixes = set([f.rsplit('_', 1)[0] for f in matrix_files])
+    features_prefixes = extract_prefix(features_files)
+    barcodes_prefixes = extract_prefix(barcodes_files)
+    matrix_prefixes = extract_prefix(matrix_files)
+    
+  
+    prefixes = features_prefixes & barcodes_prefixes & matrix_prefixes
     
     adata_list = []
     
@@ -656,23 +681,41 @@ def read_and_merge_h5_files(output_dir):
     for h5_file in h5_files:
         file_path = os.path.join(output_dir, h5_file)
         print(f"Reading {h5_file}...")
-        adata = sc.read_10x_h5(file_path)
-        adata = check_and_transpose_adata(adata)
-        adata = convert_symbol_to_ensembl(adata)
-        adata_list.append(adata)
+
+        try:
+            adata = sc.read_10x_h5(file_path)
+            adata = check_and_transpose_adata(adata)
+            adata = convert_symbol_to_ensembl(adata)
+            adata_list.append(adata)
+        except Exception as e:
+            continue   
+
+        #adata = sc.read_10x_h5(file_path)
+        #adata = check_and_transpose_adata(adata)
+        #adata = convert_symbol_to_ensembl(adata)
+        #adata_list.append(adata)*/
     
     # merge adata
     adata_list = filter_adata_by_species(adata_list)
     adata_list = filter_adata_by_gene_count(adata_list)
-
     #  merge h5 file
-    if len(adata_list) > 1:
-        print("Merging AnnData objects...")
-        adata_merged = ad.concat(adata_list, label="batch")
+    if not adata_list:
+        return None
+    elif len(adata_list) == 1:
+        return adata_list[0]
     else:
-        adata_merged = adata_list[0]
+        print("Merging AnnData objects...")
+        adata_merged = ad.concat(adata_list, label="batch")     
+        return adata_merged
     
-    return adata_merged
+    #  merge h5 file
+    #if len(adata_list) > 1:
+        #print("Merging AnnData objects...")
+        #adata_merged = ad.concat(adata_list, label="batch")
+    #else:
+        #adata_merged = adata_list[0]
+    
+    #return adata_merged
 
 
 
@@ -858,6 +901,54 @@ def read_and_merge_txt_gz_files(output_dir):
     
     return adata_merged
 
+# read and merge excel files
+def read_and_merge_excel_files(output_dir):
+    files = os.listdir(output_dir)
+    keywords = ['count', 'raw', 'data', 'umi', 'smart', 'express']
+    exclude_keywords = ['meta', 'process', 'normalized', 'annotations', 'celltype', 'adt', 'cells', 'tissue']
+    excel_files = [f for f in files if any(keyword in f.lower() for keyword in keywords) 
+                   and not any(exclude in f.lower() for exclude in exclude_keywords) 
+                   and f.endswith(('.xlsx', '.xls'))]
+    
+    if not excel_files:
+        print("No count-related Excel files found in the directory.")
+        return None
+    
+    adata_list = []
+    
+    for excel_file in excel_files:
+        file_path = os.path.join(output_dir, excel_file)
+        print(f"Reading {excel_file}...")
+
+        try:
+            # Read Excel file
+            df = pd.read_excel(file_path, engine='openpyxl' if excel_file.endswith('.xlsx') else 'xlrd')
+            
+            # Create AnnData object
+            adata = sc.AnnData(X=df.values, obs=pd.DataFrame(index=df.index), var=pd.DataFrame(index=df.columns))
+            
+            adata = check_and_transpose_adata(adata)
+            adata = convert_symbol_to_ensembl(adata)
+            adata_list.append(adata)
+        except Exception as e:
+            print(f"Error reading {excel_file}: {str(e)}")
+            continue
+    
+    # merge adata
+    adata_list = filter_adata_by_species(adata_list)
+    adata_list = filter_adata_by_gene_count(adata_list)
+
+    if len(adata_list) > 1:
+        print("Merging AnnData objects...")
+        adata_merged = ad.concat(adata_list, label="batch")
+    elif len(adata_list) == 1:
+        adata_merged = adata_list[0]
+    else:
+        print("No valid AnnData objects created from Excel files.")
+        return None
+    
+    return adata_merged
+
 
 
 
@@ -872,6 +963,7 @@ def auto_detect_and_process_files(output_dir):
     h5ad_gz_files = [f for f in files if f.endswith('.h5ad.gz')]
     loom_files = [f for f in files if f.endswith('.loom')]
     loom_gz_files = [f for f in files if f.endswith('.loom.gz')]
+    excel_files = [f for f in files if f.endswith(('.xlsx', '.xls'))]
     
     keywords = ['count', 'raw', 'data', 'umi', 'smart', 'express']
     exclude_keywords = ['meta', 'process', 'normalized', 'annotations', 'celltype', 'adt', 'cells', 'tissue']
@@ -914,6 +1006,12 @@ def auto_detect_and_process_files(output_dir):
         adata_txt_gz = read_and_merge_txt_gz_files(output_dir)
         if adata_txt_gz is not None:
             adata_list_combine.append(adata_txt_gz)
+
+    if excel_files:
+        print("Excel files detected, processing with read_and_merge_excel_files...")
+        adata_excel = read_and_merge_excel_files(output_dir)
+        if adata_excel is not None:
+            adata_list_combine.append(adata_excel)
 
     # Merge adata
     if len(adata_list_combine) > 1:
