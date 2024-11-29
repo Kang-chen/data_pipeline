@@ -38,27 +38,44 @@ class DataProcessor:
         self.adata.obs = self.obs_df
 
     def map_ontology(self, column_name, ontology_class, original_col, mapped_col, ontology_id_col):
-        bionty = ontology_class.public()
+        # bionty = ontology_class.public()
+        bionty = ontology_class
         name_mapper = {}
         ontology_id_mapper = {}
 
         for name in self.adata.obs[original_col].unique():
             if name is not None and isinstance(name, str) and name.strip():
-                search_result = bionty.search(name)
+                for search_func in [
+                lambda: bionty.filter(name=name).df(),
+                lambda: bionty.search(name, field="synonyms", limit=3).df(),
+                lambda: bionty.public().search(name, limit=3)
+                ]:
+                    search_result = search_func()  # 执行当前的匿名函数
+                    if not search_result.empty:  # 如果返回结果不为空
+                        break
                 if not search_result.empty:
                     ontology_id = search_result.iloc[0].ontology_id
+                    # print(name)   
                     record = ontology_class.from_source(ontology_id=ontology_id)
                     name_mapper[name] = record.name
                     ontology_id_mapper[name] = ontology_id
                     record.save()
-                    record.add_synonym(name)
+                    try:
+                        record.add_synonym(name)
+                    except ValueError as e:
+                        if "synonym that is already associated with a record" in str(e):
+                            # Skip this step if the specific ValueError occurs
+                            print(e)
+                        else:
+                            # Re-raise the exception if it's not the specific one we're checking for
+                            raise
                 else:
                     name_mapper[name] = "unknown"
                     ontology_id_mapper[name] = "unknown"
             else:
                 name_mapper[name] = "unknown"
                 ontology_id_mapper[name] = "unknown"
-        
+
         self.adata.obs[mapped_col] = self.adata.obs[original_col].map(name_mapper)
         self.adata.obs[ontology_id_col] = self.adata.obs[original_col].map(ontology_id_mapper)
     
@@ -141,7 +158,81 @@ class DataProcessor:
 
         return artifact
 
-def process_artifact_with_source_id(artifact, source_id):
+def map_ontology_string(ontology_class, original_string):
+    if not isinstance(original_string, str):
+        raise ValueError(f"Expected 'original_string' to be a string, got {type(original_string)}")
+
+    # Initialize mapping dictionaries
+    name_mapper = {}
+    ontology_id_mapper = {}
+
+    name = original_string.strip()
+    if not name:
+        name_mapper[name] = "unknown"
+        ontology_id_mapper[name] = "unknown"
+        return ontology_class.from_source(name="unknown")
+
+    # Search functions to try
+    search_funcs = [
+        lambda: ontology_class.filter(name=name).df(),
+        lambda: ontology_class.search(name, field="synonyms", limit=5).df(),
+        lambda: ontology_class.public().search(name, limit=5)
+    ]
+
+    results = []
+    for search_func in search_funcs:
+        search_result = search_func()
+
+        # Ensure 'name' column is present
+        if 'name' not in search_result.columns:
+            if 'name' in search_result.index.name:
+                search_result['name'] = search_result.index  # Assign the index to the 'name' column
+            else:
+                search_result['name'] = pd.NA  # If index is also missing, fill with NaN
+
+        # Standardize columns
+        search_result = search_result.rename(columns={'definition': 'description'}).fillna(pd.NA)
+        search_result = search_result[['name', 'ontology_id', 'description', 'synonyms']]
+
+        results.append(search_result)
+
+        # If results are found, stop further searching
+        if not search_result.empty:
+            break
+
+    # Concatenate all results and process
+    final_result = pd.concat(results, ignore_index=True)
+
+    if final_result.empty:
+        name_mapper[name] = "unknown"
+        ontology_id_mapper[name] = "unknown"
+        return ontology_class.from_source(name="unknown")
+
+    # Process ontology ID from results
+    ontology_id = GPT_for_ontology(final_result, name)
+    if ontology_id is None:
+        name_mapper[name] = "unknown"
+        ontology_id_mapper[name] = "unknown"
+        return ontology_class.from_source(name="unknown")
+
+    # Create ontology record
+    record = ontology_class.from_source(ontology_id=ontology_id)
+    name_mapper[name] = record.name
+    ontology_id_mapper[name] = ontology_id
+
+    try:
+        record.add_synonym(name)
+    except ValueError as e:
+        # Print error message instead of raising
+        print(f"Skipping add_synonym for {name}. Error: {e}")
+
+    return record
+
+
+def split_excel_field(field):
+    return [elem for sublist in [item.split('/') for item in field] for elem in sublist]
+
+def load_meta_from_init_excel(artifact, source_id):
     
     # Loading Excel file
     file_path = './Data_collection.xlsx'
@@ -167,7 +258,7 @@ def process_artifact_with_source_id(artifact, source_id):
     ln.Feature(name='library_protocol', dtype='cat[ULabel]').save()
     ln.Feature(name='pubmed_id', dtype='cat[ULabel]').save()
     ln.Feature(name='publication_title', dtype='cat[ULabel]').save()
-    
+
     # Extract the required column values
     data_type = row['data_type']
     species = row['species']
@@ -188,6 +279,11 @@ def process_artifact_with_source_id(artifact, source_id):
     pubmed_id_label = ln.ULabel.from_values([pubmed_id], create=True)
     publication_title_label = ln.ULabel.from_values([publication_title], create=True)
 
+    diseases_ontology = [map_ontology_string(bt.Disease, term) for term in split_excel_field([diseases])]
+    tissue_ontology = [map_ontology_string(bt.Tissue, term) for term in split_excel_field([tissue_type])]
+    assay_ontology = [map_ontology_string(bt.ExperimentalFactor, term) for term in split_excel_field([library_protocol])]
+
+
     # 保存这些值
     ln.save(data_type_label)
     ln.save(species_label)
@@ -198,22 +294,29 @@ def process_artifact_with_source_id(artifact, source_id):
     ln.save(pubmed_id_label)
     ln.save(publication_title_label)
 
-    # 将这些值添加到artifact中
+    # # 将这些值添加到artifact中
     artifact.features.add_values({
         "data_type": data_type_label,
         "species": species_label,
         "diseases": diseases_label,
+        "diseases_ontology": diseases_ontology,
+        
         "tissue_type": tissue_type_label,
+        "tissue_ontology": tissue_ontology,
+        
         "has_disease_status": bool(row['has_disease_status']),
         "has_cell_type": bool(row['has_cell_type']),
         "has_gender": bool(row['has_gender']),
         "has_age": bool(row['has_age']),
         "has_raw_data": has_raw_data_label,
         "library_protocol": library_protocol_label,
+        "assay_ontology": assay_ontology,
+        
         "pubmed_id": pubmed_id_label,
         "publication_title": publication_title_label
     })
     artifact.save()
+
 
     return artifact
 
@@ -262,7 +365,7 @@ def main():
     artifact = processor.process_data()
 
     # add descrition
-    artifact = process_artifact_with_source_id(artifact, source_id)
+    artifact = load_meta_from_init_excel(artifact, source_id)
     
     # print(lamin_db_manager.list_artifacts())
     lamin_db_manager.upload_artifact(artifact)

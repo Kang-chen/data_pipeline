@@ -153,6 +153,39 @@ def GPT_for_column(input_column):
     return output
 
 
+
+def GPT_for_ontology(final_result, name):
+    # 1. Define the prompt for ontology match
+    prompt = f"Please determine which ontology is most likely related to {name} based on the descriptions provided below. Only return the corresponding ontology_id, without any other information. If nothing match return none :"
+
+    # 2. Convert the entire final_result DataFrame into a string (without the index)
+    result_str = final_result.to_string(index=False)  # Convert DataFrame to string without index
+    
+    # 3. Combine the prompt with the final_result data
+    content = f"{prompt} {result_str}"
+    
+    # 4. Call GPT API to get the response
+    chat_completion = GPT3_turbo(content)
+    
+    # 5. Get the GPT output
+    chat_completion_dict = chat_completion.to_dict()
+    output = chat_completion_dict['choices'][0]['message']['content'].strip()  # Remove any surrounding whitespace
+    
+    # 6. Define the regex pattern to find ontology IDs (e.g., MONDO:0005155)
+    ontology_id_pattern = r'[A-Za-z]+:\d{7}'  # Matches formats like MONDO:0005155
+    
+    # 7. Search for a matching ontology ID in the output
+    matches = re.findall(ontology_id_pattern, output)
+    
+    if matches:
+        # If matches are found, return the first valid ontology ID
+        print(f"Ontology ID found: {matches[0]}")
+        return matches[0]
+    else:
+        # If no valid ontology ID is found, print an error message and return None
+        print(f"Invalid output, no valid ontology ID found. Output: {output}")
+        return None
+
 ''' For test
 if __name__ == '__main__':
     input_column = ['orig.ident',
