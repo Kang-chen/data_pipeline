@@ -7,6 +7,9 @@ from fuzzywuzzy import process
 from config import OPEN_API_KEY
 from pathlib import Path
 import re
+import logging
+
+
 """
 Function: GPT3_turbo
 This function uses the GPT-3.5-turbo model from OpenAI.
@@ -25,8 +28,11 @@ def GPT3_turbo(content):
         api_key=OPEN_API_KEY,
     )
     
+    logging.basicConfig(filename='query_GPT.log', level=logging.INFO)
+    logging.info("Query Content:\n" + content)  # Log the content to the file
+
     chat_completion = client.chat.completions.create(
-        model="gpt-3.5-turbo",
+        model="gpt-4o", #gpt-4o  gpt-3.5-turbo
         messages=[
             {
                 "role": "system",

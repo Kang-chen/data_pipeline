@@ -14,8 +14,7 @@ import argparse
 import shutil
 from GPT import *
 import warnings
-import GPT
-print(GPT.__file__)
+
 # Ignore the warnings
 warnings.filterwarnings("ignore", category=UserWarning, message="Observation names are not unique")
 warnings.filterwarnings("ignore", category=UserWarning, message="Variable names are not unique")
@@ -230,6 +229,7 @@ def map_ontology_string(ontology_class, original_string):
 
     # Create ontology record
     record = ontology_class.from_source(ontology_id=ontology_id)
+    record.save()
     name_mapper[name] = record.name
     ontology_id_mapper[name] = ontology_id
 
@@ -322,6 +322,9 @@ def load_meta_from_init_excel(artifact, source_id):
     ln.Feature(name='library_protocol', dtype='cat[ULabel]').save()
     ln.Feature(name='pubmed_id', dtype='cat[ULabel]').save()
     ln.Feature(name='publication_title', dtype='cat[ULabel]').save()
+    ln.Feature(name='disease_ontology', dtype='cat[bionty.Disease]').save()
+    ln.Feature(name='tissue_ontology', dtype='cat[bionty.Tissue]').save()
+    ln.Feature(name='assay_ontology', dtype='cat[bionty.ExperimentalFactor]').save()
 
     # Extract the required column values
     data_type = row['data_type']
@@ -347,7 +350,6 @@ def load_meta_from_init_excel(artifact, source_id):
         diseases, tissue_type, library_protocol
     )
 
-
     # 保存这些值
     ln.save(data_type_label)
     ln.save(species_label)
@@ -363,7 +365,7 @@ def load_meta_from_init_excel(artifact, source_id):
         "data_type": data_type_label,
         "species": species_label,
         "diseases": diseases_label,
-        "diseases_ontology": diseases_ontology,
+        "disease_ontology": diseases_ontology,
         
         "tissue_type": tissue_type_label,
         "tissue_ontology": tissue_ontology,
