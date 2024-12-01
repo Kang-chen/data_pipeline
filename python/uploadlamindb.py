@@ -14,7 +14,8 @@ import argparse
 import shutil
 from GPT import *
 import warnings
-
+import GPT
+print(GPT.__file__)
 # Ignore the warnings
 warnings.filterwarnings("ignore", category=UserWarning, message="Observation names are not unique")
 warnings.filterwarnings("ignore", category=UserWarning, message="Variable names are not unique")
@@ -115,7 +116,19 @@ class DataProcessor:
 
         # Convert all elements of the data box to string type
         self.adata.obs = self.adata.obs.applymap(str)
+        diseases_ontology_value, diseases_ontology_id, tissue_ontology_value, tissue_ontology_id, assay_ontology_value, assay_ontology_id = get_standardized_ontologies(self.description)
 
+        # 更新相关列，如果值为 'unknown' 则使用标准化值
+        self.adata.obs.loc[self.adata.obs['disease_ontology'] == 'unknown', 'disease_ontology'] = diseases_ontology_value
+        self.adata.obs.loc[self.adata.obs['tissue_ontology'] == 'unknown', 'tissue_ontology'] = tissue_ontology_value
+        self.adata.obs.loc[self.adata.obs['assay_ontology'] == 'unknown', 'assay_ontology'] = assay_ontology_value
+
+        # 更新 ontology_id 列
+        self.adata.obs.loc[self.adata.obs['disease_ontology_id'] == 'unknown', 'disease_ontology_id'] = diseases_ontology_id
+        self.adata.obs.loc[self.adata.obs['tissue_ontology_id'] == 'unknown', 'tissue_ontology_id'] = tissue_ontology_id
+        self.adata.obs.loc[self.adata.obs['assay_ontology_id'] == 'unknown', 'assay_ontology_id'] = assay_ontology_id
+        
+        
         # Define categorical variables and their mappings
         categoricals = {
             self.adata.obs.assay_ontology.name: bt.ExperimentalFactor.name,
@@ -232,6 +245,57 @@ def map_ontology_string(ontology_class, original_string):
 def split_excel_field(field):
     return [elem for sublist in [item.split('/') for item in field] for elem in sublist]
 
+
+def standardize_ontologies(diseases, tissue_type, library_protocol):
+    diseases_ontology = [
+        map_ontology_string(bt.Disease, term)
+        for term in split_excel_field([diseases])
+    ]
+    tissue_ontology = [
+        map_ontology_string(bt.Tissue, term)
+        for term in split_excel_field([tissue_type])
+    ]
+    assay_ontology = [
+        map_ontology_string(bt.ExperimentalFactor, term)
+        for term in split_excel_field([library_protocol])
+    ]
+    return diseases_ontology, tissue_ontology, assay_ontology
+
+
+def get_standardized_ontologies(source_id):
+    # Load the Excel file
+    file_path = './Data_collection.xlsx'
+    df = pd.read_excel(file_path)
+    
+    # Find the corresponding row based on the source_id
+    row = df[df['source_id'] == source_id].squeeze()
+    if row.empty:
+        raise ValueError(f"No data found for source_id: {source_id}")
+
+    # Extract the required column values
+    diseases = row['diseases']
+    tissue_type = row['tissue_type']
+    library_protocol = row['library_protocol']
+
+    # Standardize the ontologies (returns both names and IDs)
+    diseases_ontology_list, tissue_ontology_list, assay_ontology_list = standardize_ontologies(
+        diseases, tissue_type, library_protocol
+    )
+
+    # Get the standardized names and IDs (assuming single values for simplicity)
+    diseases_ontology_value = diseases_ontology_list[0].name if diseases_ontology_list else 'unknown'
+    diseases_ontology_id = diseases_ontology_list[0].ontology_id if diseases_ontology_list else 'unknown'
+
+    tissue_ontology_value = tissue_ontology_list[0].name if tissue_ontology_list else 'unknown'
+    tissue_ontology_id = tissue_ontology_list[0].ontology_id if tissue_ontology_list else 'unknown'
+
+    assay_ontology_value = assay_ontology_list[0].name if assay_ontology_list else 'unknown'
+    assay_ontology_id = assay_ontology_list[0].ontology_id if assay_ontology_list else 'unknown'
+
+    return diseases_ontology_value, diseases_ontology_id, tissue_ontology_value, tissue_ontology_id, assay_ontology_value, assay_ontology_id
+
+
+
 def load_meta_from_init_excel(artifact, source_id):
     
     # Loading Excel file
@@ -279,9 +343,9 @@ def load_meta_from_init_excel(artifact, source_id):
     pubmed_id_label = ln.ULabel.from_values([pubmed_id], create=True)
     publication_title_label = ln.ULabel.from_values([publication_title], create=True)
 
-    diseases_ontology = [map_ontology_string(bt.Disease, term) for term in split_excel_field([diseases])]
-    tissue_ontology = [map_ontology_string(bt.Tissue, term) for term in split_excel_field([tissue_type])]
-    assay_ontology = [map_ontology_string(bt.ExperimentalFactor, term) for term in split_excel_field([library_protocol])]
+    diseases_ontology, tissue_ontology, assay_ontology = standardize_ontologies(
+        diseases, tissue_type, library_protocol
+    )
 
 
     # 保存这些值

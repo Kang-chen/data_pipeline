@@ -6,6 +6,7 @@ from fuzzywuzzy import fuzz
 from fuzzywuzzy import process
 from config import OPEN_API_KEY
 from pathlib import Path
+import re
 """
 Function: GPT3_turbo
 This function uses the GPT-3.5-turbo model from OpenAI.
