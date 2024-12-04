@@ -44,6 +44,11 @@ class DataProcessor:
         ontology_id_mapper = {}
 
         for name in self.adata.obs[original_col].unique():
+            record = bionty.from_source(name = name)
+            if record is not None:
+                    name_mapper[name] = record.name
+                    ontology_id_mapper[name] = ontology_id
+                    continue
             if name is not None and isinstance(name, str) and name.strip():
                 for search_func in [
                 lambda: bionty.filter(name=name).df(),
@@ -183,6 +188,14 @@ def map_ontology_string(ontology_class, original_string):
         name_mapper[name] = "unknown"
         ontology_id_mapper[name] = "unknown"
         return ontology_class.from_source(name="unknown")
+    
+    
+    record = ontology_class.from_source(name = name)    
+    if record is not None:
+        name_mapper[name] = record.name
+        ontology_id_mapper[name] = record.ontology_id
+        return record
+    
 
     # Search functions to try
     search_funcs = [
