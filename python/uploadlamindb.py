@@ -38,10 +38,11 @@ class DataProcessor:
         self.adata.obs = self.obs_df
 
     def map_ontology(self, column_name, ontology_class, original_col, mapped_col, ontology_id_col):
-        # bionty = ontology_class.public()
         bionty = ontology_class
         name_mapper = {}
         ontology_id_mapper = {}
+
+        self.adata.obs[original_col] = self.adata.obs[original_col].fillna("unknown")
 
         for name in self.adata.obs[original_col].unique():
             record = bionty.from_source(name = name)
@@ -50,39 +51,176 @@ class DataProcessor:
                     ontology_id_mapper[name] = ontology_id
                     continue
             if name is not None and isinstance(name, str) and name.strip():
+                record = bionty.from_source(name=name)
+                if record is not None:
+                   name_mapper[name] = record.name
+                   ontology_id_mapper[name] = str(record.ontology_id) 
+            else:
                 for search_func in [
-                lambda: bionty.filter(name=name).df(),
-                lambda: bionty.search(name, field="synonyms", limit=3).df(),
-                lambda: bionty.public().search(name, limit=3)
+                    lambda: bionty.filter(name=name).df(),
+                    lambda: bionty.search(name, field="synonyms", limit=3).df() if name else None,
+                    lambda: bionty.public().search(name, limit=3) if name else None
                 ]:
-                    search_result = search_func()  # 执行当前的匿名函数
-                    if not search_result.empty:  # 如果返回结果不为空
-                        break
-                if not search_result.empty:
-                    ontology_id = search_result.iloc[0].ontology_id
-                    # print(name)   
-                    record = ontology_class.from_source(ontology_id=ontology_id)
-                    name_mapper[name] = record.name
-                    ontology_id_mapper[name] = ontology_id
-                    record.save()
-                    try:
-                        record.add_synonym(name)
-                    except ValueError as e:
-                        if "synonym that is already associated with a record" in str(e):
-                            # Skip this step if the specific ValueError occurs
-                            print(e)
-                        else:
-                            # Re-raise the exception if it's not the specific one we're checking for
-                            raise
+                    search_result = search_func()
+                    if search_result is not None and hasattr(search_result, 'empty') and not search_result.empty:
+                        ontology_id = search_result.iloc[0].ontology_id
+                        record = ontology_class.from_source(ontology_id=ontology_id)
+                        name_mapper[name] = record.name
+                        ontology_id_mapper[name] = str(ontology_id)
+                        record.save()
+                        try:
+                            record.add_synonym(name)
+                        except ValueError as e:
+                            if "synonym that is already associated with a record" in str(e):
+                                print(e)
+                            else:
+                                raise
+                        break  # Break out of the `for search_func` loop if successful
+                    # if search_result is not None and hasattr(search_result, 'empty') and not search_result.empty:
+                    #    ontology_id = search_result.iloc[0].ontology_id
+                    #    record = ontology_class.from_source(ontology_id=ontology_id)
+                    #    name_mapper[name] = record.name
+                    #    ontology_id_mapper[name] = ontology_id
+                    #    record.save()
+                    #     try:
+                    #         record.add_synonym(name)
+                    #     except ValueError as e:
+                    #         if "synonym that is already associated with a record" in str(e):
+                    #             print(e)
+                    #         else:
+                    #             raise
+                    #     break
+                    # # if search_result and not search_result.empty:
+                    # #     ontology_id = search_result.iloc[0].ontology_id
+                    # #     record = ontology_class.from_source(ontology_id=ontology_id)
+                    # #     name_mapper[name] = record.name
+                    # #     ontology_id_mapper[name] = ontology_id
+                    # #     record.save()
+                        
                 else:
                     name_mapper[name] = "unknown"
                     ontology_id_mapper[name] = "unknown"
-            else:
-                name_mapper[name] = "unknown"
-                ontology_id_mapper[name] = "unknown"
+        #                 try:
+        #                     record.add_synonym(name)
+        #                 except ValueError as e:
+        #                     if "synonym that is already associated with a record" not in str(e):
+        #                         raise
+        #                 break
+        # for name in self.adata.obs[original_col].unique():
+        #     if name is not None and isinstance(name, str) and name.strip():
+        #         record = bionty.from_source(name=name)
+        #     if record is not None:
+        #         name_mapper[name] = record.name
+        #         ontology_id_mapper[name] = record.ontology_id
+        #     else:
+        #         for search_func in [
+        #             lambda: bionty.filter(name=name).df(),
+        #             lambda: bionty.search(name, field="synonyms", limit=3).df(),
+        #             lambda: bionty.public().search(name, limit=3)
+        #         ]:
+        #             search_result = search_func()
+        #             if not search_result.empty:
+        #                 ontology_id = search_result.iloc[0].ontology_id
+        #                 record = ontology_class.from_source(ontology_id=ontology_id)
+        #                 name_mapper[name] = record.name
+        #                 ontology_id_mapper[name] = ontology_id
+        #                 record.save()
+        #                 try:
+        #                     record.add_synonym(name)
+        #                 except ValueError as e:
+        #                     if "synonym that is already associated with a record" in str(e):
+        #                         # Skip this step if the specific ValueError occurs
+        #                         print(e)
+        #                     else:
+        #                         # Re-raise the exception if it's not the specific one we're checking for
+        #                         raise
+        #                 break
+        #         else:
+        #             name_mapper[name] = "unknown"
+        #             ontology_id_mapper[name] = "unknown"
+
+            #         if not search_result.empty:
+            #             ontology_id = search_result.iloc[0].ontology_id
+            #             record = ontology_class.from_source(ontology_id=ontology_id)
+            #             name_mapper[name] = record.name
+            #             ontology_id_mapper[name] = ontology_id
+            #             record.save()
+            #             try:
+            #                 record.add_synonym(name)
+            #             except ValueError as e:
+            #                 if "synonym that is already associated with a record" not in str(e):
+            #                     raise
+            #             break
+            #     else:
+            #         name_mapper[name] = "unknown"
+            #         ontology_id_mapper[name] = "unknown"
+            #        else:
+            # name_mapper[name] = "unknown"
+            # ontology_id_mapper[name] = "unknown"
 
         self.adata.obs[mapped_col] = self.adata.obs[original_col].map(name_mapper)
         self.adata.obs[ontology_id_col] = self.adata.obs[original_col].map(ontology_id_mapper)
+
+    # def map_ontology(self, column_name, ontology_class, original_col, mapped_col, ontology_id_col):
+    #     # bionty = ontology_class.public()
+    #     bionty = ontology_class
+    #     name_mapper = {}
+    #     ontology_id_mapper = {}
+
+    #     for name in self.adata.obs[original_col].unique():
+    #         record = bionty.from_source(name = name)
+    #         if record is not None:
+    #                 name_mapper[name] = record.name
+    #                 ontology_id_mapper[name] = record.ontology_id
+    #                 continue
+    #         if name is not None and isinstance(name, str) and name.strip():
+    #             for search_func in [
+    #             lambda: bionty.filter(name=name).df(),
+    #             lambda: bionty.search(name, field="synonyms", limit=3).df(),
+    #             lambda: bionty.public().search(name, limit=3)
+    #             ]:
+    #             search_result = search_func()  # 执行当前的匿名函数
+    #             if not search_result.empty:  # 如果返回结果不为空
+    #                 ontology_id = search_result.iloc[0].ontology_id
+    #                 record = ontology_class.from_source(ontology_id=ontology_id)
+    #                 name_mapper[name] = record.name
+    #                 ontology_id_mapper[name] = ontology_id
+    #                 record.save()
+    #                 try:
+    #                     record.add_synonym(name)
+    #                 except ValueError as e:
+    #                     print(f"Skipping add_synonym for {name}. Error: {e}")
+    #                 break
+    #         else:
+    #             # 如果没有找到匹配的记录，将值设置为'unknown'
+    #             name_mapper[name] = "unknown"
+    #             ontology_id_mapper[name] = "unknown"    break
+    #             if not search_result.empty:
+    #                 ontology_id = search_result.iloc[0].ontology_id
+    #                 # print(name)   
+    #                 record = ontology_class.from_source(ontology_id=ontology_id)
+    #                 name_mapper[name] = record.name
+    #                 ontology_id_mapper[name] = ontology_id
+    #                 record.save()
+    #                 try:
+    #                     record.add_synonym(name)
+    #                 except ValueError as e:
+    #                     if "synonym that is already associated with a record" in str(e):
+    #                         # Skip this step if the specific ValueError occurs
+    #                         print(e)
+    #                     else:
+    #                         # Re-raise the exception if it's not the specific one we're checking for
+    #                         raise
+    #             else:
+    #                 name_mapper[name] = "unknown"
+    #                 ontology_id_mapper[name] = "unknown"
+    #     else:
+    #         name_mapper[name] = "unknown"
+    #         ontology_id_mapper[name] = "unknown"
+
+    # else:    
+    #     self.adata.obs[mapped_col] = self.adata.obs[original_col].map(name_mapper)
+    #     self.adata.obs[ontology_id_col] = self.adata.obs[original_col].map(ontology_id_mapper)
     
     def detect_species(self):
         gene_ids = self.adata.var_names.unique()
