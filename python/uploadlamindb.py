@@ -48,7 +48,7 @@ class DataProcessor:
             record = bionty.from_source(name = name)
             if record is not None:
                     name_mapper[name] = record.name
-                    ontology_id_mapper[name] = ontology_id
+                    ontology_id_mapper[name] = str(record.ontology_id) 
                     continue
             if name is not None and isinstance(name, str) and name.strip():
                 record = bionty.from_source(name=name)
