@@ -34,6 +34,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Process GEO data.")
     parser.add_argument('--source_id', type=str, required=True, help="GEO series ID (e.g., GSE156793)")
     parser.add_argument('--output_dir', type=str, default='./geo_supp_files', help="Output directory for GEO files")
+    parser.add_argument('--workspace_dir', type=str, default='./workspace', help="Root directory for workspaces")
     return parser.parse_args()
 
 
@@ -1031,13 +1032,18 @@ def auto_detect_and_process_files(output_dir):
 
 
 # save adata
-def save_adata(adata):
-    save_dir = './process'
-    save_path = os.path.join(save_dir, 'merged_adata.h5ad')
+def save_adata(adata, output_dir):
+    process_dir = os.path.join(output_dir, 'process')
+    if not os.path.exists(process_dir):
+        os.makedirs(process_dir)
+    save_path = os.path.join(process_dir, 'merged_adata.h5ad')
+# def save_adata(adata):
+#     save_dir = './process'
+#     save_path = os.path.join(save_dir, 'merged_adata.h5ad')
 
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
-        print(f"Directory '{save_dir}' created.")
+    # if not os.path.exists(save_dir):
+    #     os.makedirs(save_dir)
+    #     print(f"Directory '{save_dir}' created.")
 
     try:
         # Convert non-string objects to strings in all DataFrames in adata.uns
@@ -1079,7 +1085,9 @@ if __name__ == "__main__":
     
     # define source_id and output_dir
     geo_id = args.source_id
-    output_dir = args.output_dir
+    workspace_dir = args.workspace_dir
+    output_dir = os.path.join(workspace_dir, geo_id)
+    #output_dir = args.output_dir
 
     # download and extract supplementary files
     download_geo_supp_files(geo_id, output_dir)
@@ -1088,10 +1096,10 @@ if __name__ == "__main__":
 
     # process adata
     adata = auto_detect_and_process_files(output_dir)
-    save_adata(adata)
+    save_adata(adata, output_dir)
 
     # delete folders
-    shutil.rmtree(output_dir)
+    #shutil.rmtree(output_dir)
 
 
 

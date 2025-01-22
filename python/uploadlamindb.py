@@ -20,8 +20,16 @@ warnings.filterwarnings("ignore", category=UserWarning, message="Observation nam
 warnings.filterwarnings("ignore", category=UserWarning, message="Variable names are not unique")
 warnings.filterwarnings("ignore", category=UserWarning, message="Trying to modify attribute `.obs` of view, initializing view as actual")
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Process GEO data.")
+    parser.add_argument('--source_id', type=str, required=True, help="GEO series ID (e.g., GSE156793)")
+    parser.add_argument('--workspace_dir', type=str, default='./workspace', help="Root directory for workspaces")
+    return parser.parse_args()
+
 class DataProcessor:
-    def __init__(self, adata_path,source_id):
+    def __init__(self, adata_path, source_id, workspace_dir):
+        self.workspace_dir = workspace_dir
+        self.source_id = source_id
         self.adata = sc.read_h5ad(adata_path)
         self.obs_df = self.adata.obs.copy()
         self.description = source_id
@@ -394,7 +402,11 @@ def map_ontology_string(ontology_class, original_string):
 
 
 def split_excel_field(field):
-    return [elem for sublist in [item.split('/') for item in field] for elem in sublist]
+    if isinstance(field, pd.Series):
+        field = field.tolist()
+    return [elem for sublist in [str(item).split('/') for item in field] for elem in sublist]
+# def split_excel_field(field):
+#     return [elem for sublist in [item.split('/') for item in field] for elem in sublist]
 
 
 def standardize_ontologies(diseases, tissue_type, library_protocol):
@@ -448,7 +460,7 @@ def get_standardized_ontologies(source_id):
 
 
 def load_meta_from_init_excel(artifact, source_id):
-    
+
     # Loading Excel file
     file_path = './Data_collection.xlsx'
     df = pd.read_excel(file_path)
@@ -478,15 +490,27 @@ def load_meta_from_init_excel(artifact, source_id):
     ln.Feature(name='assay_ontology', dtype='cat[bionty.ExperimentalFactor]').save()
 
     # Extract the required column values
-    data_type = row['data_type']
-    species = row['species']
-    diseases = row['diseases']
-    tissue_type = row['tissue_type']
-    library_protocol = row['library_protocol']
-    has_raw_data = str(row['has_raw_data'])
-    pubmed_id = str(row['pubmed_id']) 
-    publication_title = row['publication_title']
-
+    data_type = row['data_type'].iloc[0] if isinstance(row['data_type'], pd.Series) else row['data_type']
+    species = row['species'].iloc[0] if isinstance(row['species'], pd.Series) else row['species']
+    diseases = row['diseases'].iloc[0] if isinstance(row['diseases'], pd.Series) else row['diseases']
+    tissue_type = row['tissue_type'].iloc[0] if isinstance(row['tissue_type'], pd.Series) else row['tissue_type']
+    library_protocol = row['library_protocol'].iloc[0] if isinstance(row['library_protocol'], pd.Series) else row['library_protocol']
+    has_raw_data = str(row['has_raw_data'].iloc[0]) if isinstance(row['has_raw_data'], pd.Series) else str(row['has_raw_data'])
+    pubmed_id = str(row['pubmed_id'].iloc[0]) if isinstance(row['pubmed_id'], pd.Series) else str(row['pubmed_id'])
+    publication_title = row['publication_title'].iloc[0] if isinstance(row['publication_title'], pd.Series) else row['publication_title']
+    # data_type = row['data_type']
+    # species = row['species']
+    # diseases = row['diseases']
+    # tissue_type = row['tissue_type']
+    # library_protocol = row['library_protocol']
+    # has_raw_data = str(row['has_raw_data'])
+    # pubmed_id = str(row['pubmed_id']) 
+    # publication_title = row['publication_title']
+    # Extract boolean values and ensure they are scalars
+    has_disease_status = bool(row['has_disease_status'].iloc[0]) if isinstance(row['has_disease_status'], pd.Series) else bool(row['has_disease_status'])
+    has_cell_type = bool(row['has_cell_type'].iloc[0]) if isinstance(row['has_cell_type'], pd.Series) else bool(row['has_cell_type'])
+    has_gender = bool(row['has_gender'].iloc[0]) if isinstance(row['has_gender'], pd.Series) else bool(row['has_gender'])
+    has_age = bool(row['has_age'].iloc[0]) if isinstance(row['has_age'], pd.Series) else bool(row['has_age'])
     # 转换为ULabel对象并保存
     data_type_label = ln.ULabel.from_values([data_type], create=True)
     species_label = ln.ULabel.from_values([species], create=True)
@@ -521,10 +545,10 @@ def load_meta_from_init_excel(artifact, source_id):
         "tissue_type": tissue_type_label,
         "tissue_ontology": tissue_ontology,
         
-        "has_disease_status": bool(row['has_disease_status']),
-        "has_cell_type": bool(row['has_cell_type']),
-        "has_gender": bool(row['has_gender']),
-        "has_age": bool(row['has_age']),
+        "has_disease_status": has_disease_status,
+        "has_cell_type": has_cell_type,
+        "has_gender": has_gender,
+        "has_age": has_age,
         "has_raw_data": has_raw_data_label,
         "library_protocol": library_protocol_label,
         "assay_ontology": assay_ontology,
@@ -536,6 +560,9 @@ def load_meta_from_init_excel(artifact, source_id):
 
 
     return artifact
+# except Exception as e:
+#     print(f"An error occurred: {e}")
+#     raise
 
 class LaminDBManager:
     def __init__(self, storage_path):
@@ -562,27 +589,58 @@ class LaminDBManager:
 def main():
 
     # Create a parser object
-    parser = argparse.ArgumentParser(description='Process some integers.')
+    #parser = argparse.ArgumentParser(description='Process some integers.')
+    # Analytic parameter
+    args = parse_args()
+    source_id = args.source_id
+    workspace_dir = args.workspace_dir
+
+    # 动态生成 adata_path
+    adata_path = os.path.join(workspace_dir, source_id, 'dataforload', 'qc_adata.h5ad')
+    print(f"Attempting to read file: {adata_path}")
+
+    # 检查文件是否存在
+    if not os.path.exists(adata_path):
+        raise FileNotFoundError(f"The file {adata_path} does not exist. Please check the path and ensure the file is available.")
 
     # Add parameter
-    parser.add_argument('--source_id', type=str, required=True, help='The source ID to process')
+    #parser.add_argument('--source_id', type=str, required=True, help='The source ID to process')
 
     # Analytic parameter
-    args = parser.parse_args()
+    #args = parser.parse_args()
 
     # Get parameter values
-    source_id = args.source_id
+    #source_id = args.source_id
+    output_dir = os.path.join(workspace_dir, source_id)
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    # # 动态生成 adata_path
+    # adata_path = os.path.join(workspace_dir, 'dataforload', 'qc_adata.h5ad')
+    # if not os.path.exists(adata_path):
+    #     raise FileNotFoundError(f"The file {adata_path} does not exist. Please check the path and ensure the file is available.")
+
+    # 初始化 DataProcessor
+    processor = DataProcessor(adata_path, source_id, workspace_dir)
+    artifact = processor.process_data()
+
+    # 添加元数据
+    artifact = load_meta_from_init_excel(artifact, source_id)
 
     # Print parameter value
     lamin_db_manager = LaminDBManager('s3://cartabio/ai/data/fujing_test2')
     lamin_db_manager.initialize()
     ln.settings.storage_local = "/home/fujing/fujingge/fujing_test2/"
+    
+    # #adata_path = os.path.join(workspace_dir, source_id, 'dataforload', 'qc_adata.h5ad')
+    # adata_path = os.path.join(workspace_dir, 'dataforload', 'qc_adata.h5ad')
+    # processor = DataProcessor('./dataforload/qc_adata.h5ad', source_id, workspace_dir)
+    # artifact = processor.process_data()
+    # #processor = DataProcessor('./dataforload/qc_adata.h5ad', source_id)
+    # #artifact = processor.process_data()
 
-    processor = DataProcessor('./dataforload/qc_adata.h5ad', source_id)
-    artifact = processor.process_data()
-
-    # add descrition
-    artifact = load_meta_from_init_excel(artifact, source_id)
+    # # add descrition
+    # artifact = load_meta_from_init_excel(artifact, source_id)
     
     # print(lamin_db_manager.list_artifacts())
     lamin_db_manager.upload_artifact(artifact)
@@ -591,7 +649,9 @@ def main():
     lamin_db_manager.close()
 
     # delete folders
-    shutil.rmtree('./dataforload')
+    #shutil.rmtree('./dataforload')
+    #shutil.rmtree(os.path.join(workspace_dir, 'dataforload'))
+    shutil.rmtree(os.path.join(workspace_dir, source_id, 'dataforload'))
 
 
 if __name__ == "__main__":

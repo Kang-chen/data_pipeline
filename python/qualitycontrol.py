@@ -24,6 +24,7 @@ warnings.filterwarnings("ignore", category=UserWarning, message="Trying to modif
 def parse_args():
     parser = argparse.ArgumentParser(description="Quality control of adata.")
     parser.add_argument('--source_id', type=str, required=True, help="GEO series ID (e.g., GSE156793)")
+    parser.add_argument('--workspace_dir', type=str, default='./workspace', help="Root directory for workspaces")
     return parser.parse_args()
 
 
@@ -254,26 +255,47 @@ def convert_csc_to_csr(adata):
 
 
 # save adata
-def save_adata(adata):
+def save_adata(adata, source_id, workspace_dir):
     
-    save_dir = './dataforload'
+    save_dir = os.path.join(workspace_dir, source_id, 'dataforload')
     save_path = os.path.join(save_dir, 'qc_adata.h5ad')
+    #save_dir = './dataforload'
+    #save_path = os.path.join(save_dir, 'qc_adata.h5ad')
 
     # create folders
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
+        print(f"Directory '{save_dir}' created.")
+# def save_adata(adata):
+    
+#     save_dir = './dataforload'
+#     save_path = os.path.join(save_dir, 'qc_adata.h5ad')
+
+    # # create folders
+    # if not os.path.exists(save_dir):
+    #     os.makedirs(save_dir)
 
     # save adata
     adata.write(save_path)
+    print(f"AnnData object saved to '{save_path}'.")
 
 
 if __name__ == "__main__":
     
     # get arguments
-    args = parse_args() 
+    args = parse_args()
+    source_id = args.source_id
+    workspace_dir = args.workspace_dir 
 
-    # import adata
-    adata = sc.read_h5ad('./process/merged_adata.h5ad')
+    # Create the output directory for the specific source_id
+    output_dir = os.path.join(workspace_dir, source_id)
+    # Ensure the output directory exists
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+   # import adata
+    adata_path = os.path.join(output_dir, 'process', 'merged_adata.h5ad')
+    adata = sc.read_h5ad(adata_path)
 
     # process adata
     adata = find_and_move_integer_matrix(adata)
@@ -290,9 +312,11 @@ if __name__ == "__main__":
     adata.obs['dataset_id'] = args.source_id
     adata.obs['organisms'] = species
     adata.X = adata.X.astype('float32')
-    save_adata(adata)
+    save_adata(adata, source_id, workspace_dir)
+    #save_adata(adata)
 
     # delete folders
-    shutil.rmtree('./process')
+    #shutil.rmtree('./process')
+    shutil.rmtree(os.path.join(output_dir, 'process'))
 
 
